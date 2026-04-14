@@ -371,3 +371,48 @@ body {
   text-align: center;
   margin-top: 8px;
 }
+
+/* ── Toggle ── */
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 11px;
+  user-select: none;
+}
+
+.toggle input[type="checkbox"] {
+  width: 32px;
+  height: 18px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: #d1d5db;
+  border-radius: 9px;
+  position: relative;
+  cursor: pointer;
+  transition: background 0.2s;
+  outline: none;
+  border: none;
+}
+
+.toggle input[type="checkbox"]:checked {
+  background: #6366f1;
+}
+
+.toggle input[type="checkbox"]::before {
+  content: "";
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  top: 2px;
+  left: 2px;
+  background: white;
+  transition: transform 0.2s;
+}
+
+.toggle input[type="checkbox"]:checked::before {
+  transform: translateX(14px);
+}

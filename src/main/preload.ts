@@ -16,6 +16,8 @@ contextBridge.exposeInMainWorld("alphaPrint", {
   selectPrinter: (name: string) => ipcRenderer.invoke("printer:select", name),
   testPrint: (name: string) => ipcRenderer.invoke("printer:test", name),
 
-  // App info
+  // App info & settings
   getAppInfo: () => ipcRenderer.invoke("app:info"),
+  toggleAutoStart: (enabled: boolean) =>
+    ipcRenderer.invoke("app:toggleAutoStart", enabled),
 });

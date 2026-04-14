@@ -190,11 +190,32 @@ async function loadAppInfo() {
         <span class="label">ID do dispositivo</span>
         <span class="value">${(info.deviceId || "").slice(0, 8)}...</span>
       </div>
+      <div class="info-row">
+        <span class="label">Iniciar com Windows</span>
+        <span class="value">
+          <label class="toggle">
+            <input type="checkbox" id="auto-start-toggle" ${info.autoStartEnabled ? "checked" : ""} onchange="toggleAutoStart(this.checked)" />
+            <span class="toggle-label">${info.autoStartEnabled ? "Sim" : "Nao"}</span>
+          </label>
+        </span>
+      </div>
     `;
   } catch {
     appInfoEl.innerHTML = "";
   }
 }
+
+async function toggleAutoStart(enabled) {
+  try {
+    await api.toggleAutoStart(enabled);
+    const label = document.querySelector("#auto-start-toggle + .toggle-label");
+    if (label) label.textContent = enabled ? "Sim" : "Nao";
+  } catch (err) {
+    console.error("Failed to toggle auto-start:", err);
+  }
+}
+
+window.toggleAutoStart = toggleAutoStart;
 
 // ── Logout ──
 

@@ -2,12 +2,15 @@
 // Tray — System tray icon and menu for Alpha Print
 // ============================================================
 
-import { app, Tray, Menu, nativeImage, BrowserWindow } from "electron";
+import { app, Tray, Menu, nativeImage } from "electron";
 import path from "path";
+import { existsSync, writeFileSync } from "fs";
 import store from "./store";
 
 let tray: Tray | null = null;
 let lastPrintTime = "";
+// Cache generated icons so we don't recreate them every time
+const iconCache = new Map<string, Electron.NativeImage>();
 
 type TrayStatus = "connected" | "disconnected" | "error";
 
@@ -20,9 +23,8 @@ export function createTray(
   onShowWindow: () => void,
   onQuit: () => void
 ): Tray {
-  // Use a simple 16x16 icon — create from path or from native image
-  const iconPath = getIconPath("disconnected");
-  tray = new Tray(iconPath);
+  const icon = getTrayIcon("disconnected");
+  tray = new Tray(icon);
   tray.setToolTip("Alpha Print - Desconectado");
 
   updateTrayMenu(onShowWindow, onQuit);
@@ -43,8 +45,8 @@ export function updateTrayStatus(
 ): void {
   if (!tray) return;
 
-  const iconPath = getIconPath(status);
-  tray.setImage(iconPath);
+  const icon = getTrayIcon(status);
+  tray.setImage(icon);
 
   const tooltips: Record<TrayStatus, string> = {
     connected: `Alpha Print - Conectado (${store.get("selectedPrinter") || "Sem impressora"})`,
@@ -120,72 +122,165 @@ function updateTrayMenu(
   tray.setContextMenu(contextMenu);
 }
 
-function getIconPath(status: TrayStatus): string {
-  // Try to load custom icons from assets folder
-  // Fallback to creating simple colored icons programmatically
+/**
+ * Get a nativeImage for the tray icon.
+ * Tries asset files first (icon.png, icon-green.png, icon-red.png),
+ * then falls back to programmatically generated PNG icons.
+ */
+function getTrayIcon(status: TrayStatus): Electron.NativeImage {
+  // Check cache first
+  const cached = iconCache.get(status);
+  if (cached) return cached;
+
+  // Try to load from assets folder — use PNG (works on all platforms)
   const assetsDir = path.join(__dirname, "..", "..", "assets");
 
-  const fileMap: Record<TrayStatus, string> = {
-    connected: "icon-green.ico",
-    disconnected: "icon.ico",
-    error: "icon-red.ico",
+  const fileMap: Record<TrayStatus, string[]> = {
+    connected: ["icon-green.png", "icon-green.ico", "icon.png"],
+    disconnected: ["icon.png", "icon.ico"],
+    error: ["icon-red.png", "icon-red.ico", "icon.png"],
   };
 
-  const filePath = path.join(assetsDir, fileMap[status]);
-
-  try {
-    const img = nativeImage.createFromPath(filePath);
-    if (!img.isEmpty()) return filePath;
-  } catch {
-    // Fallback below
+  for (const fileName of fileMap[status]) {
+    const filePath = path.join(assetsDir, fileName);
+    try {
+      if (existsSync(filePath)) {
+        const img = nativeImage.createFromPath(filePath);
+        if (!img.isEmpty()) {
+          // Resize to 16x16 for tray
+          const resized = img.resize({ width: 16, height: 16 });
+          iconCache.set(status, resized);
+          return resized;
+        }
+      }
+    } catch {
+      // Try next file
+    }
   }
 
-  // Fallback: create a simple colored 16x16 icon programmatically
-  return createFallbackIcon(status);
+  // Fallback: generate a minimal PNG programmatically
+  const icon = createFallbackIcon(status);
+  iconCache.set(status, icon);
+  return icon;
 }
 
-function createFallbackIcon(status: TrayStatus): string {
-  // Create a simple 16x16 PNG with colored circle
+/**
+ * Create a simple 16x16 PNG icon with a colored circle.
+ * Uses proper PNG format via nativeImage.
+ */
+function createFallbackIcon(status: TrayStatus): Electron.NativeImage {
   const colors: Record<TrayStatus, [number, number, number]> = {
-    connected: [76, 175, 80],    // Green
+    connected: [76, 175, 80],     // Green
     disconnected: [158, 158, 158], // Gray
-    error: [244, 67, 54],         // Red
+    error: [244, 67, 54],          // Red
   };
 
   const [r, g, b] = colors[status];
-
-  // Create a minimal 16x16 RGBA buffer
   const size = 16;
-  const data = Buffer.alloc(size * size * 4, 0);
-  const cx = size / 2;
-  const cy = size / 2;
+
+  // Build a minimal valid PNG file manually
+  // PNG = signature + IHDR chunk + IDAT chunk (raw pixels) + IEND chunk
+  const png = buildMinimalPNG(size, size, r, g, b);
+
+  return nativeImage.createFromBuffer(png, {
+    width: size,
+    height: size,
+  });
+}
+
+/**
+ * Build a minimal valid PNG buffer with a colored circle on transparent background.
+ * This avoids the bug of passing raw RGBA to nativeImage.createFromBuffer
+ * (which expects PNG/JPEG format, not raw pixel data).
+ */
+function buildMinimalPNG(
+  width: number,
+  height: number,
+  r: number,
+  g: number,
+  b: number
+): Buffer {
+  const cx = width / 2;
+  const cy = height / 2;
   const radius = 6;
 
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const dx = x - cx;
-      const dy = y - cy;
+  // Build raw image data (filter byte + RGBA for each row)
+  // Each row: 1 filter byte (0 = None) + width * 4 bytes (RGBA)
+  const rawDataSize = height * (1 + width * 4);
+  const rawData = Buffer.alloc(rawDataSize, 0);
+
+  for (let y = 0; y < height; y++) {
+    const rowStart = y * (1 + width * 4);
+    rawData[rowStart] = 0; // Filter: None
+    for (let x = 0; x < width; x++) {
+      const dx = x - cx + 0.5;
+      const dy = y - cy + 0.5;
+      const offset = rowStart + 1 + x * 4;
       if (dx * dx + dy * dy <= radius * radius) {
-        const offset = (y * size + x) * 4;
-        data[offset] = r;
-        data[offset + 1] = g;
-        data[offset + 2] = b;
-        data[offset + 3] = 255;
+        rawData[offset] = r;
+        rawData[offset + 1] = g;
+        rawData[offset + 2] = b;
+        rawData[offset + 3] = 255;
+      } else {
+        // Transparent
+        rawData[offset + 3] = 0;
       }
     }
   }
 
-  const img = nativeImage.createFromBuffer(data, {
-    width: size,
-    height: size,
-  });
+  // Compress with zlib (deflate)
+  const zlib = require("zlib");
+  const compressed: Buffer = zlib.deflateSync(rawData);
 
-  // nativeImage doesn't have toPNG path, but we can use the nativeImage directly
-  // For Tray, we return the nativeImage via a temp path
-  const tmpPath = path.join(app.getPath("temp"), `alpha-print-tray-${status}.png`);
-  const fs = require("fs");
-  fs.writeFileSync(tmpPath, img.toPNG());
-  return tmpPath;
+  // PNG signature
+  const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+
+  // IHDR chunk
+  const ihdrData = Buffer.alloc(13);
+  ihdrData.writeUInt32BE(width, 0);
+  ihdrData.writeUInt32BE(height, 4);
+  ihdrData[8] = 8;  // bit depth
+  ihdrData[9] = 6;  // color type (RGBA)
+  ihdrData[10] = 0; // compression
+  ihdrData[11] = 0; // filter
+  ihdrData[12] = 0; // interlace
+  const ihdr = buildPNGChunk("IHDR", ihdrData);
+
+  // IDAT chunk
+  const idat = buildPNGChunk("IDAT", compressed);
+
+  // IEND chunk
+  const iend = buildPNGChunk("IEND", Buffer.alloc(0));
+
+  return Buffer.concat([signature, ihdr, idat, iend]);
+}
+
+function buildPNGChunk(type: string, data: Buffer): Buffer {
+  const length = Buffer.alloc(4);
+  length.writeUInt32BE(data.length, 0);
+  const typeBuffer = Buffer.from(type, "ascii");
+  const body = Buffer.concat([typeBuffer, data]);
+  // CRC32 over type + data
+  const crc = crc32(body);
+  const crcBuffer = Buffer.alloc(4);
+  crcBuffer.writeUInt32BE(crc >>> 0, 0);
+  return Buffer.concat([length, body, crcBuffer]);
+}
+
+// Simple CRC32 implementation for PNG chunks
+function crc32(buf: Buffer): number {
+  let crc = 0xffffffff;
+  for (let i = 0; i < buf.length; i++) {
+    crc ^= buf[i];
+    for (let j = 0; j < 8; j++) {
+      if (crc & 1) {
+        crc = (crc >>> 1) ^ 0xedb88320;
+      } else {
+        crc = crc >>> 1;
+      }
+    }
+  }
+  return crc ^ 0xffffffff;
 }
 
 /**
@@ -196,4 +291,5 @@ export function destroyTray(): void {
     tray.destroy();
     tray = null;
   }
+  iconCache.clear();
 }

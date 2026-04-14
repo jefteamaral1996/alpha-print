@@ -1,10 +1,10 @@
 // ============================================================
 // Printer — Impressao ESC/POS nativa no Windows
-// Usa PowerShell para enviar dados raw direto para a impressora
+// Usa PowerShell + Win32 API (WritePrinter) para enviar raw data
 // ============================================================
 
 import { exec } from "child_process";
-import { writeFileSync, unlinkSync } from "fs";
+import { writeFileSync, unlinkSync, existsSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { randomUUID } from "crypto";
@@ -27,7 +27,7 @@ async function listPrintersPS(): Promise<string[]> {
       { timeout: 10000 },
       (error: Error | null, stdout: string) => {
         if (error) {
-          console.error("[Printer] PowerShell error:", error.message);
+          console.error("[Printer] PowerShell Get-Printer error:", error.message);
           resolve([]);
           return;
         }
@@ -47,7 +47,7 @@ async function listPrintersPS(): Promise<string[]> {
 async function listPrintersWMIC(): Promise<string[]> {
   return new Promise((resolve) => {
     exec(
-      'wmic printer get name',
+      "wmic printer get name",
       { timeout: 10000 },
       (error: Error | null, stdout: string) => {
         if (error) {
@@ -90,9 +90,10 @@ export async function getDefaultPrinter(): Promise<string> {
 /**
  * Print raw ESC/POS data to a specific printer.
  *
- * Strategy: Write binary data to temp file, then use PowerShell to send
- * to the printer's raw port. This works with thermal receipt printers
- * that accept ESC/POS commands directly.
+ * Strategy: Write binary data to temp file, then use PowerShell
+ * with Win32 API (OpenPrinter/WritePrinter) to send raw bytes
+ * directly to the printer, bypassing the driver. This is the
+ * correct way to print ESC/POS on Windows.
  *
  * @param printerName Exact name of the Windows printer
  * @param base64Data ESC/POS data encoded as base64
@@ -110,72 +111,158 @@ export async function printRaw(
   }
 }
 
+/**
+ * Build a PowerShell script file that uses Win32 API (winspool.drv)
+ * to send raw bytes to a printer. Writes the script as a .ps1 file
+ * because inline PowerShell with C# Add-Type is too complex for
+ * command-line escaping.
+ */
+function buildRawPrintScript(printerName: string, dataFilePath: string): string {
+  const escapedPrinter = printerName.replace(/'/g, "''");
+  const escapedFile = dataFilePath.replace(/\\/g, "\\\\");
+
+  return `$ErrorActionPreference = 'Stop'
+
+Add-Type -TypeDefinition @'
+using System;
+using System.IO;
+using System.Runtime.InteropServices;
+
+public class RawPrinter {
+    [StructLayout(LayoutKind.Sequential)]
+    public struct DOCINFOA {
+        [MarshalAs(UnmanagedType.LPStr)] public string pDocName;
+        [MarshalAs(UnmanagedType.LPStr)] public string pOutputFile;
+        [MarshalAs(UnmanagedType.LPStr)] public string pDataType;
+    }
+
+    [DllImport("winspool.drv", SetLastError=true, CharSet=CharSet.Ansi)]
+    public static extern bool OpenPrinter(string pPrinterName, out IntPtr hPrinter, IntPtr pDefault);
+
+    [DllImport("winspool.drv", SetLastError=true)]
+    public static extern bool StartDocPrinter(IntPtr hPrinter, int level, ref DOCINFOA pDocInfo);
+
+    [DllImport("winspool.drv", SetLastError=true)]
+    public static extern bool StartPagePrinter(IntPtr hPrinter);
+
+    [DllImport("winspool.drv", SetLastError=true)]
+    public static extern bool WritePrinter(IntPtr hPrinter, IntPtr pBytes, int dwCount, out int dwWritten);
+
+    [DllImport("winspool.drv", SetLastError=true)]
+    public static extern bool EndPagePrinter(IntPtr hPrinter);
+
+    [DllImport("winspool.drv", SetLastError=true)]
+    public static extern bool EndDocPrinter(IntPtr hPrinter);
+
+    [DllImport("winspool.drv", SetLastError=true)]
+    public static extern bool ClosePrinter(IntPtr hPrinter);
+
+    public static void SendRaw(string printerName, byte[] data) {
+        IntPtr hPrinter;
+        if (!OpenPrinter(printerName, out hPrinter, IntPtr.Zero))
+            throw new Exception("Nao foi possivel abrir a impressora: " + printerName + " (erro " + Marshal.GetLastWin32Error() + ")");
+
+        var di = new DOCINFOA {
+            pDocName = "Alpha Print RAW",
+            pDataType = "RAW"
+        };
+
+        try {
+            if (!StartDocPrinter(hPrinter, 1, ref di))
+                throw new Exception("StartDocPrinter falhou (erro " + Marshal.GetLastWin32Error() + ")");
+            if (!StartPagePrinter(hPrinter))
+                throw new Exception("StartPagePrinter falhou (erro " + Marshal.GetLastWin32Error() + ")");
+
+            IntPtr pBytes = Marshal.AllocCoTaskMem(data.Length);
+            Marshal.Copy(data, 0, pBytes, data.Length);
+            int written;
+            bool ok = WritePrinter(hPrinter, pBytes, data.Length, out written);
+            Marshal.FreeCoTaskMem(pBytes);
+
+            if (!ok)
+                throw new Exception("WritePrinter falhou (erro " + Marshal.GetLastWin32Error() + ")");
+
+            EndPagePrinter(hPrinter);
+            EndDocPrinter(hPrinter);
+        } finally {
+            ClosePrinter(hPrinter);
+        }
+    }
+}
+'@
+
+$bytes = [System.IO.File]::ReadAllBytes('${escapedFile}')
+[RawPrinter]::SendRaw('${escapedPrinter}', $bytes)
+Write-Host 'OK'
+`;
+}
+
 async function sendToPrinter(
   printerName: string,
   data: Buffer
 ): Promise<void> {
   // Write raw data to temp file
-  const tempFile = join(tmpdir(), `alpha-print-${randomUUID()}.bin`);
+  const jobId = randomUUID();
+  const tempFile = join(tmpdir(), `alpha-print-${jobId}.bin`);
+  const scriptFile = join(tmpdir(), `alpha-print-${jobId}.ps1`);
+
   writeFileSync(tempFile, data);
 
   return new Promise((resolve, reject) => {
-    // Use PowerShell's Out-Printer with raw data
-    // Method: Copy binary file directly to printer share
-    // This sends raw ESC/POS bytes without any driver processing
-    const escapedPrinter = printerName.replace(/'/g, "''");
-    const escapedFile = tempFile.replace(/\\/g, "\\\\");
+    // Write the PowerShell script to a temp .ps1 file
+    // (avoids complex escaping issues with inline commands)
+    const script = buildRawPrintScript(printerName, tempFile);
+    writeFileSync(scriptFile, script, "utf-8");
 
-    // Use COPY /B to send raw data to the printer
-    // This bypasses the printer driver and sends ESC/POS directly
-    const cmd = `powershell -NoProfile -Command "` +
-      `$printer = Get-Printer -Name '${escapedPrinter}' -ErrorAction Stop; ` +
-      `$port = (Get-PrinterPort -Name $printer.PortName).Name; ` +
-      `Copy-Item -Path '${escapedFile}' -Destination ('\\\\\\\\localhost\\\\' + '${escapedPrinter}') -Force -ErrorAction Stop` +
-      `"`;
+    // Primary method: Win32 API WritePrinter via PowerShell script
+    const cmd = `powershell -NoProfile -ExecutionPolicy Bypass -File "${scriptFile}"`;
 
-    exec(cmd, { timeout: 15000 }, (error) => {
-      // Clean up temp file
-      try {
-        unlinkSync(tempFile);
-      } catch {
-        // Ignore cleanup errors
-      }
-
-      if (error) {
-        // Fallback: try direct raw printing via .NET
-        const fallbackCmd = `powershell -NoProfile -Command "` +
-          `Add-Type -AssemblyName System.Drawing; ` +
-          `$bytes = [System.IO.File]::ReadAllBytes('${escapedFile}'); ` +
-          `$doc = New-Object System.Drawing.Printing.PrintDocument; ` +
-          `$doc.PrinterSettings.PrinterName = '${escapedPrinter}'; ` +
-          `# Raw print via shared printer` +
-          `"`;
-
-        // Simpler fallback: use net use + copy /b
-        const simpleFallback =
-          `cmd /c "copy /b "${tempFile}" "\\\\localhost\\${printerName}""`;
-
-        exec(simpleFallback, { timeout: 15000 }, (err2) => {
-          try {
-            unlinkSync(tempFile);
-          } catch {
-            // Ignore
-          }
-          if (err2) {
-            reject(
-              new Error(
-                `Falha ao imprimir em "${printerName}": ${error.message}`
-              )
-            );
-          } else {
-            resolve();
-          }
-        });
-      } else {
+    exec(cmd, { timeout: 30000 }, (error) => {
+      if (!error) {
+        // Success — clean up and resolve
+        cleanupTemp(tempFile);
+        cleanupTemp(scriptFile);
         resolve();
+        return;
       }
+
+      console.error("[Printer] Win32 raw print failed:", error.message);
+      console.log("[Printer] Trying shared printer fallback...");
+
+      // Fallback: try via shared printer path (\\localhost\PRINTER)
+      // This works if the printer is shared on the network
+      const shareName = printerName.replace(/"/g, "");
+      const fallbackCmd =
+        `cmd /c copy /b "${tempFile}" "\\\\localhost\\${shareName}"`;
+
+      exec(fallbackCmd, { timeout: 15000 }, (err2) => {
+        cleanupTemp(tempFile);
+        cleanupTemp(scriptFile);
+
+        if (err2) {
+          reject(
+            new Error(
+              `Falha ao imprimir em "${printerName}". ` +
+              `Verifique se a impressora esta ligada e conectada. ` +
+              `Erro: ${error.message}`
+            )
+          );
+        } else {
+          resolve();
+        }
+      });
     });
   });
+}
+
+function cleanupTemp(filePath: string): void {
+  try {
+    if (existsSync(filePath)) {
+      unlinkSync(filePath);
+    }
+  } catch {
+    // Ignore cleanup errors
+  }
 }
 
 /**

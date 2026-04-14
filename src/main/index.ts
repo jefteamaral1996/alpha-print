@@ -3,8 +3,9 @@
 // App Electron para impressao termica automatica
 // ============================================================
 
-import { app, BrowserWindow, ipcMain, dialog } from "electron";
+import { app, BrowserWindow, ipcMain } from "electron";
 import path from "path";
+import { existsSync } from "fs";
 import store, { isLoggedIn, clearAuth } from "./store";
 import { login, restoreSession, logout, startTokenRefresh } from "./supabase";
 import { listPrinters, printTest, getDefaultPrinter } from "./printer";
@@ -27,9 +28,26 @@ if (!gotTheLock) {
   });
 }
 
+// ── Auto-Start with Windows ──────────────────────────────
+function setupAutoStart(): void {
+  try {
+    app.setLoginItemSettings({
+      openAtLogin: true,
+      name: "Alpha Print",
+      // On Windows, Electron uses the Registry to set auto-start
+    });
+    console.log("[App] Auto-start configured");
+  } catch (err) {
+    console.error("[App] Failed to set auto-start:", err);
+  }
+}
+
 // ── App Lifecycle ─────────────────────────────────────────
 
 app.on("ready", async () => {
+  // Configure auto-start with Windows
+  setupAutoStart();
+
   // Create tray icon
   createTray(showWindow, quitApp);
 
@@ -51,7 +69,6 @@ app.on("ready", async () => {
 
 app.on("window-all-closed", () => {
   // Don't quit when window is closed — keep running in tray
-  // Electron default behavior on macOS is to not quit.
   // On Windows, we prevent quit by not calling app.quit()
 });
 
@@ -62,6 +79,23 @@ app.on("before-quit", () => {
 });
 
 // ── Window Management ─────────────────────────────────────
+
+/**
+ * Resolve the icon path — try .png first (always exists), then .ico
+ */
+function resolveIconPath(): string {
+  const assetsDir = path.join(__dirname, "..", "..", "assets");
+  const pngPath = path.join(assetsDir, "icon.png");
+  const icoPath = path.join(assetsDir, "icon.ico");
+
+  // Prefer ICO on Windows, but fallback to PNG if ICO doesn't exist
+  if (existsSync(icoPath)) return icoPath;
+  if (existsSync(pngPath)) return pngPath;
+
+  // Last resort — return PNG path even if it doesn't exist
+  // (Electron handles missing icons gracefully)
+  return pngPath;
+}
 
 function showWindow(): void {
   if (mainWindow) {
@@ -83,7 +117,7 @@ function showWindow(): void {
     maximizable: false,
     fullscreenable: false,
     title: "Alpha Print",
-    icon: path.join(__dirname, "..", "..", "assets", "icon.ico"),
+    icon: resolveIconPath(),
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -135,7 +169,7 @@ function startPrintService(): void {
   // Start token refresh
   tokenRefreshInterval = startTokenRefresh();
 
-  // Start print listener
+  // Start print listener (with reconnection support)
   startListening((event) => {
     if (event.type === "printed") {
       const now = new Date().toLocaleTimeString("pt-BR");
@@ -217,10 +251,25 @@ ipcMain.handle("printer:test", async (_event, printerName: string) => {
   }
 });
 
+// Toggle auto-start
+ipcMain.handle("app:toggleAutoStart", async (_event, enabled: boolean) => {
+  try {
+    app.setLoginItemSettings({ openAtLogin: enabled, name: "Alpha Print" });
+    return { success: true, enabled };
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : "Erro desconhecido",
+    };
+  }
+});
+
 // Get app info
 ipcMain.handle("app:info", () => {
+  const loginSettings = app.getLoginItemSettings();
   return {
     version: app.getVersion(),
     deviceId: store.get("deviceId"),
+    autoStartEnabled: loginSettings.openAtLogin,
   };
 });
