@@ -90,7 +90,7 @@ function updateTrayMenu(
       enabled: false,
     },
     {
-      label: `Dispositivo: ${deviceName}`,
+      label: `Computador: ${deviceName}`,
       enabled: false,
     },
     {

@@ -351,8 +351,8 @@ async function loadAppInfo() {
         <span class="value">v${info.version}</span>
       </div>
       <div class="info-row">
-        <span class="label">ID do dispositivo</span>
-        <span class="value">${(info.deviceId || "").slice(0, 8)}...</span>
+        <span class="label">Computador</span>
+        <span class="value">${escapeHtml(info.deviceName || "Sem nome")}</span>
       </div>
       <div class="info-row">
         <span class="label">Iniciar com Windows</span>

@@ -94,20 +94,25 @@ function resolveIconPath(): string {
     path.join(app.getAppPath(), "..", "assets"),
   ];
 
+  console.log("[App] Searching for icon. App path:", app.getAppPath());
+  console.log("[App] Resources path:", process.resourcesPath);
+  console.log("[App] __dirname:", __dirname);
+
   for (const dir of possibleDirs) {
     try {
       const icoPath = path.join(dir, "icon.ico");
       const pngPath = path.join(dir, "icon.png");
       if (existsSync(icoPath)) {
-        console.log("[App] Icon found at:", icoPath);
+        console.log("[App] Icon found (ICO):", icoPath);
         return icoPath;
       }
       if (existsSync(pngPath)) {
-        console.log("[App] Icon found at:", pngPath);
+        console.log("[App] Icon found (PNG):", pngPath);
         return pngPath;
       }
+      console.log("[App] Icon NOT found in:", dir);
     } catch {
-      // Skip inaccessible dirs
+      console.log("[App] Icon dir inaccessible:", dir);
     }
   }
 

@@ -5,6 +5,7 @@
 
 import Store from "electron-store";
 import { randomUUID } from "crypto";
+import { hostname } from "os";
 
 export interface AreaMapping {
   printAreaId: string;
@@ -47,12 +48,17 @@ const store = new Store<StoreSchema>({
     userEmail: "",
     storeName: "",
     deviceId: randomUUID(),
-    deviceName: "",
+    deviceName: process.env.COMPUTERNAME || hostname() || "",
     areaMappings: {},
     windowBounds: { width: 420, height: 600 },
   },
   encryptionKey: "alpha-print-local-enc-2026",
 });
+
+// ── Migration: fill deviceName if empty (existing installs) ──
+if (!store.get("deviceName")) {
+  store.set("deviceName", process.env.COMPUTERNAME || hostname() || "");
+}
 
 export default store;
 
