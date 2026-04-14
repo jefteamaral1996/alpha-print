@@ -25,9 +25,10 @@ win:
   signAndEditExecutable: false
 
 nsis:
-  oneClick: false
-  perMachine: false
+  oneClick: true
+  perMachine: true
   allowToChangeInstallationDirectory: false
+  allowElevation: true
   artifactName: "AlphaPrintSetup.${ext}"
   createDesktopShortcut: always
   createStartMenuShortcut: true
