@@ -1,5 +1,6 @@
 // ============================================================
 // Preload — Exposes safe IPC methods to renderer via contextBridge
+// Alpha Print v2: read-only executor mode
 // ============================================================
 
 import { contextBridge, ipcRenderer } from "electron";
@@ -11,13 +12,35 @@ contextBridge.exposeInMainWorld("alphaPrint", {
   logout: () => ipcRenderer.invoke("auth:logout"),
   getAuthStatus: () => ipcRenderer.invoke("auth:status"),
 
-  // Printer
+  // Printers (read-only — just list and test)
   listPrinters: () => ipcRenderer.invoke("printer:list"),
-  selectPrinter: (name: string) => ipcRenderer.invoke("printer:select", name),
   testPrint: (name: string) => ipcRenderer.invoke("printer:test", name),
+
+  // Areas (from portal, read-only — mapping done on portal)
+  getAreas: () => ipcRenderer.invoke("areas:list"),
+
+  // Device
+  setDeviceName: (name: string) => ipcRenderer.invoke("device:setName", name),
 
   // App info & settings
   getAppInfo: () => ipcRenderer.invoke("app:info"),
   toggleAutoStart: (enabled: boolean) =>
     ipcRenderer.invoke("app:toggleAutoStart", enabled),
+
+  // Connection status
+  getConnectionStatus: () => ipcRenderer.invoke("connection:status"),
+
+  // Events from main process
+  onAreasUpdated: (callback: (areas: any[]) => void) => {
+    ipcRenderer.on("areas:updated", (_event, areas) => callback(areas));
+  },
+  onPrintersUpdated: (callback: (printers: string[]) => void) => {
+    ipcRenderer.on("printers:updated", (_event, printers) => callback(printers));
+  },
+  onPrintEvent: (callback: (event: any) => void) => {
+    ipcRenderer.on("print:event", (_event, data) => callback(data));
+  },
+  onConnectionStatusChanged: (callback: (status: any) => void) => {
+    ipcRenderer.on("connection:status", (_event, status) => callback(status));
+  },
 });

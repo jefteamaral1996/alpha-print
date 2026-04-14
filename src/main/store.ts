@@ -6,6 +6,14 @@
 import Store from "electron-store";
 import { randomUUID } from "crypto";
 
+export interface AreaMapping {
+  printAreaId: string;
+  printerName: string;
+  areaName: string;
+  areaType: string;
+  enabled: boolean;
+}
+
 interface StoreSchema {
   // Auth tokens (persisted from login)
   accessToken: string;
@@ -16,11 +24,15 @@ interface StoreSchema {
   userEmail: string;
   storeName: string;
 
-  // Printer config
-  selectedPrinter: string;
-
   // Device identity (generated once, persisted forever)
   deviceId: string;
+
+  // Device friendly name (editable by user, e.g. "PC Caixa")
+  deviceName: string;
+
+  // Area -> Printer mappings (local config per device)
+  // Key: print_area_id, Value: local printer name
+  areaMappings: Record<string, AreaMapping>;
 
   // Window state
   windowBounds: { width: number; height: number; x?: number; y?: number };
@@ -34,9 +46,10 @@ const store = new Store<StoreSchema>({
     storeId: "",
     userEmail: "",
     storeName: "",
-    selectedPrinter: "",
     deviceId: randomUUID(),
-    windowBounds: { width: 420, height: 520 },
+    deviceName: "",
+    areaMappings: {},
+    windowBounds: { width: 420, height: 600 },
   },
   encryptionKey: "alpha-print-local-enc-2026",
 });
@@ -55,6 +68,7 @@ export function clearAuth(): void {
   store.set("storeId", "");
   store.set("userEmail", "");
   store.set("storeName", "");
+  store.set("areaMappings", {});
 }
 
 export function getDeviceId(): string {

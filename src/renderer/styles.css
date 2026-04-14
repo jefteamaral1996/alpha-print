@@ -1,5 +1,5 @@
 /* ============================================================
-   Alpha Print — Minimal clean UI
+   Alpha Print — Clean UI v2 (read-only executor mode)
    ============================================================ */
 
 * {
@@ -33,7 +33,7 @@ body {
 
 .screen {
   flex: 1;
-  padding: 24px;
+  padding: 20px;
   display: flex;
   flex-direction: column;
 }
@@ -138,28 +138,6 @@ body {
   cursor: not-allowed;
 }
 
-.btn-secondary {
-  height: 32px;
-  padding: 0 14px;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  background: white;
-  color: #374151;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.btn-secondary:hover {
-  background: #f3f4f6;
-}
-
-.btn-secondary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 .btn-danger {
   width: 100%;
   height: 36px;
@@ -175,6 +153,61 @@ body {
 
 .btn-danger:hover {
   background: #fee2e2;
+}
+
+.btn-icon {
+  width: 28px;
+  height: 28px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: white;
+  color: #6b7280;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+
+.btn-icon:hover {
+  background: #f3f4f6;
+}
+
+.btn-test {
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 5px;
+  background: white;
+  color: #374151;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.btn-test:hover {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+}
+
+.btn-test:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-test.success {
+  background: #ecfdf5;
+  border-color: #6ee7b7;
+  color: #059669;
+}
+
+.btn-test.error {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #dc2626;
 }
 
 /* ── Error ── */
@@ -194,21 +227,57 @@ body {
   text-align: center;
 }
 
-/* ── Config Screen ── */
+/* ── Main Screen ── */
 
 .header {
-  margin-bottom: 20px;
+  margin-bottom: 16px;
+}
+
+.header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .header h2 {
   font-size: 18px;
   font-weight: 700;
+  white-space: nowrap;
+}
+
+.device-name-row {
+  flex: 1;
+  max-width: 180px;
+}
+
+.device-name-input {
+  width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #374151;
+  background: #f9fafb;
+  outline: none;
+  text-align: right;
+  transition: border-color 0.15s;
+}
+
+.device-name-input:focus {
+  border-color: #6366f1;
+  background: white;
+}
+
+.device-name-input::placeholder {
+  color: #9ca3af;
 }
 
 .store-info {
   font-size: 12px;
   color: #6b7280;
-  margin-top: 2px;
+  margin-top: 4px;
 }
 
 .section {
@@ -216,11 +285,22 @@ body {
   border: 1px solid #e5e7eb;
   border-radius: 10px;
   padding: 14px;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.section-header h3 {
+  margin-bottom: 0;
 }
 
 .section h3 {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -228,7 +308,20 @@ body {
   margin-bottom: 10px;
 }
 
+.section-hint {
+  font-size: 11px;
+  color: #9ca3af;
+  margin-bottom: 10px;
+  line-height: 1.4;
+}
+
 /* ── Status ── */
+
+.status-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
 
 .status-row {
   display: flex;
@@ -238,11 +331,25 @@ body {
   font-weight: 500;
 }
 
+.status-label {
+  font-size: 12px;
+  color: #6b7280;
+  font-weight: 600;
+  min-width: 60px;
+}
+
+.status-value {
+  font-size: 12px;
+  font-weight: 500;
+  color: #374151;
+}
+
 .status-dot {
   width: 10px;
   height: 10px;
   border-radius: 50%;
   flex-shrink: 0;
+  transition: background 0.3s, box-shadow 0.3s;
 }
 
 .status-dot.green {
@@ -250,95 +357,216 @@ body {
   box-shadow: 0 0 6px rgba(34, 197, 94, 0.4);
 }
 
-.status-dot.yellow {
-  background: #eab308;
-  box-shadow: 0 0 6px rgba(234, 179, 8, 0.4);
-}
-
 .status-dot.red {
   background: #ef4444;
   box-shadow: 0 0 6px rgba(239, 68, 68, 0.4);
+}
+
+.status-dot.yellow {
+  background: #f59e0b;
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.4);
+  animation: pulse-yellow 1.5s ease-in-out infinite;
 }
 
 .status-dot.gray {
   background: #9ca3af;
 }
 
-/* ── Printer List ── */
+.status-dot.checking {
+  background: #9ca3af;
+  animation: pulse-gray 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-yellow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes pulse-gray {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.last-print {
+  margin-top: 8px;
+  font-size: 11px;
+  color: #6b7280;
+  display: flex;
+  gap: 4px;
+  padding-top: 6px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.last-print .value {
+  font-weight: 600;
+  color: #374151;
+}
+
+/* ── Printer List (read-only) ── */
 
 .printer-list {
-  margin-bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .printer-item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   padding: 8px 10px;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
-  margin-bottom: 6px;
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  background: #fafafa;
 }
 
-.printer-item:hover {
-  background: #f9fafb;
+.printer-item.read-only {
+  cursor: default;
 }
 
-.printer-item.selected {
-  border-color: #6366f1;
-  background: #eef2ff;
-}
-
-.printer-item .radio {
-  width: 16px;
-  height: 16px;
-  border: 2px solid #d1d5db;
-  border-radius: 50%;
+.printer-icon {
+  font-size: 16px;
+  width: 24px;
+  text-align: center;
   flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.printer-item.selected .radio {
-  border-color: #6366f1;
-}
-
-.printer-item.selected .radio::after {
-  content: "";
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #6366f1;
 }
 
 .printer-item .name {
   font-size: 12px;
   font-weight: 500;
   flex: 1;
-}
-
-.printer-item .badge {
-  font-size: 10px;
-  font-weight: 600;
-  color: #6366f1;
-  background: #eef2ff;
-  padding: 2px 6px;
-  border-radius: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .loading {
   font-size: 12px;
   color: #9ca3af;
   text-align: center;
+  padding: 12px;
+}
+
+/* ── Areas (from portal) ── */
+
+.areas-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.area-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.area-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: #fafafa;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.area-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.area-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1a1a2e;
+}
+
+.area-type {
+  font-size: 10px;
+  font-weight: 600;
+  color: #6366f1;
+  background: #eef2ff;
+  padding: 1px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.area-meta {
+  display: flex;
+  gap: 6px;
+}
+
+.area-detail {
+  font-size: 10px;
+  color: #9ca3af;
+  font-weight: 500;
+}
+
+.area-mapping {
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.area-mapping.read-only {
+  background: #f9fafb;
+}
+
+.area-mapping.no-printer {
+  background: #fffbeb;
+}
+
+.mapping-label {
+  font-size: 11px;
+  color: #6b7280;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.mapping-value {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mapping-status {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.mapping-status.active {
+  background: #22c55e;
+}
+
+.mapping-hint {
+  font-size: 10px;
+  color: #d97706;
+  font-weight: 500;
+  margin-left: auto;
+}
+
+.empty-state {
+  text-align: center;
   padding: 16px;
 }
 
-.actions {
-  display: flex;
-  gap: 8px;
+.empty-state p {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.empty-state .hint {
+  font-size: 11px;
+  margin-top: 4px;
 }
 
 /* ── Info Grid ── */

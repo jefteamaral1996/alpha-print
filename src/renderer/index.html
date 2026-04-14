@@ -36,37 +36,66 @@
       <p class="footer-text">Use suas credenciais do Alpha Cardapio</p>
     </div>
 
-    <!-- Config Screen -->
-    <div id="config-screen" class="screen hidden">
+    <!-- Main Screen (read-only executor) -->
+    <div id="main-screen" class="screen hidden">
       <div class="header">
-        <h2>Alpha Print</h2>
+        <div class="header-top">
+          <h2>Alpha Print</h2>
+          <div class="device-name-row">
+            <input type="text" id="device-name" class="device-name-input" placeholder="Nome do PC (ex: PC Caixa)" />
+          </div>
+        </div>
         <div id="store-info" class="store-info"></div>
       </div>
 
+      <!-- Status -->
       <div class="section">
         <h3>Status</h3>
-        <div id="status-indicator" class="status-row">
-          <div class="status-dot green"></div>
-          <span>Conectado e aguardando impressoes</span>
+        <div class="status-grid">
+          <div id="status-internet" class="status-row">
+            <div id="internet-dot" class="status-dot checking"></div>
+            <span class="status-label">Internet:</span>
+            <span id="internet-text" class="status-value">Verificando...</span>
+          </div>
+          <div id="status-server" class="status-row">
+            <div id="server-dot" class="status-dot gray"></div>
+            <span class="status-label">Servidor:</span>
+            <span id="server-text" class="status-value">Desconectado</span>
+          </div>
+        </div>
+        <div id="last-print" class="last-print hidden">
+          <span class="label">Ultima impressao:</span>
+          <span id="last-print-time" class="value"></span>
         </div>
       </div>
 
+      <!-- Detected Printers -->
       <div class="section">
-        <h3>Impressora</h3>
+        <div class="section-header">
+          <h3>Impressoras detectadas</h3>
+          <button id="refresh-btn" class="btn-icon" onclick="refreshPrinters()" title="Atualizar lista">&#x21bb;</button>
+        </div>
         <div id="printer-list" class="printer-list">
           <p class="loading">Buscando impressoras...</p>
         </div>
-        <div class="actions">
-          <button id="refresh-btn" class="btn-secondary" onclick="refreshPrinters()">Atualizar lista</button>
-          <button id="test-btn" class="btn-secondary" onclick="testPrint()" disabled>Imprimir teste</button>
+      </div>
+
+      <!-- Areas from Portal (read-only — mapping is done on the portal) -->
+      <div class="section">
+        <h3>Areas de impressao</h3>
+        <p class="section-hint">Configuradas e mapeadas no portal. Atualizacoes aparecem aqui automaticamente.</p>
+        <div id="areas-list" class="areas-list">
+          <p class="loading">Carregando areas do portal...</p>
         </div>
       </div>
 
+      <!-- Info -->
       <div class="section">
         <h3>Informacoes</h3>
         <div id="app-info" class="info-grid"></div>
       </div>
 
+      <!-- Logout -->
       <div class="section">
         <button id="logout-btn" class="btn-danger" onclick="doLogout()">Desconectar conta</button>
         <p class="hint">O Alpha Print continuara na bandeja do sistema enquanto estiver aberto.</p>

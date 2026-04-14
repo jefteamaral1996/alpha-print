@@ -48,8 +48,10 @@ export function updateTrayStatus(
   const icon = getTrayIcon(status);
   tray.setImage(icon);
 
+  const deviceName = store.get("deviceName") || "Sem nome";
+  const mappingCount = Object.keys(store.get("areaMappings") || {}).length;
   const tooltips: Record<TrayStatus, string> = {
-    connected: `Alpha Print - Conectado (${store.get("selectedPrinter") || "Sem impressora"})`,
+    connected: `Alpha Print - ${deviceName} (${mappingCount} area${mappingCount !== 1 ? "s" : ""} mapeada${mappingCount !== 1 ? "s" : ""})`,
     disconnected: "Alpha Print - Desconectado",
     error: "Alpha Print - Erro",
   };
@@ -72,8 +74,10 @@ function updateTrayMenu(
   if (!tray) return;
 
   const storeName = store.get("storeName") || "Nao conectado";
-  const selectedPrinter = store.get("selectedPrinter") || "Nenhuma";
+  const deviceName = store.get("deviceName") || "Sem nome";
   const userEmail = store.get("userEmail") || "";
+  const areaMappings = store.get("areaMappings") || {};
+  const mappedCount = Object.keys(areaMappings).length;
 
   const menuItems: Electron.MenuItemConstructorOptions[] = [
     {
@@ -86,7 +90,11 @@ function updateTrayMenu(
       enabled: false,
     },
     {
-      label: `Impressora: ${selectedPrinter}`,
+      label: `Dispositivo: ${deviceName}`,
+      enabled: false,
+    },
+    {
+      label: `Areas mapeadas: ${mappedCount}`,
       enabled: false,
     },
   ];

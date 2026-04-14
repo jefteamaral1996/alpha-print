@@ -1,6 +1,8 @@
 // ============================================================
 // Alpha Print — Main Process Entry Point
 // App Electron para impressao termica automatica
+// Modo: SOMENTE LEITURA / EXECUTOR
+// Config vem do portal, app so mapeia impressoras e executa
 // ============================================================
 
 import { app, BrowserWindow, ipcMain } from "electron";
@@ -9,7 +11,17 @@ import { existsSync } from "fs";
 import store, { isLoggedIn, clearAuth } from "./store";
 import { login, restoreSession, logout, startTokenRefresh } from "./supabase";
 import { listPrinters, printTest, getDefaultPrinter } from "./printer";
-import { startListening, stopListening, updatePresence } from "./print-listener";
+import {
+  startListening,
+  stopListening,
+  updatePresence,
+  getCachedAreas,
+  getCachedPrinters,
+  onAreasChange,
+  onPrintersChange,
+  onConnectionStatusChange,
+  getConnectionStatus,
+} from "./print-listener";
 import { createTray, updateTrayStatus, updateLastPrintTime, destroyTray } from "./tray";
 
 let mainWindow: BrowserWindow | null = null;
@@ -23,7 +35,6 @@ if (!gotTheLock) {
   app.quit();
 } else {
   app.on("second-instance", () => {
-    // Someone tried to open a second instance — show our window
     showWindow();
   });
 }
@@ -34,7 +45,6 @@ function setupAutoStart(): void {
     app.setLoginItemSettings({
       openAtLogin: true,
       name: "Alpha Print",
-      // On Windows, Electron uses the Registry to set auto-start
     });
     console.log("[App] Auto-start configured");
   } catch (err) {
@@ -45,31 +55,23 @@ function setupAutoStart(): void {
 // ── App Lifecycle ─────────────────────────────────────────
 
 app.on("ready", async () => {
-  // Configure auto-start with Windows
   setupAutoStart();
-
-  // Create tray icon
   createTray(showWindow, quitApp);
 
-  // Try to restore session
   if (isLoggedIn()) {
     const restored = await restoreSession();
     if (restored) {
-      // Session valid — start printing
       startPrintService();
     } else {
-      // Session expired — show login window
       showWindow();
     }
   } else {
-    // No credentials — show login window
     showWindow();
   }
 });
 
 app.on("window-all-closed", () => {
   // Don't quit when window is closed — keep running in tray
-  // On Windows, we prevent quit by not calling app.quit()
 });
 
 app.on("before-quit", () => {
@@ -80,12 +82,7 @@ app.on("before-quit", () => {
 
 // ── Window Management ─────────────────────────────────────
 
-/**
- * Resolve the icon path — try .png first (always exists), then .ico
- */
 function resolveIconPath(): string {
-  // In packaged app, assets are relative to app.getAppPath()
-  // In dev, they're relative to __dirname (dist/main/)
   const possibleDirs = [
     path.join(app.getAppPath(), "assets"),
     path.join(__dirname, "..", "..", "assets"),
@@ -100,7 +97,6 @@ function resolveIconPath(): string {
     if (existsSync(pngPath)) return pngPath;
   }
 
-  // Last resort
   return path.join(app.getAppPath(), "assets", "icon.png");
 }
 
@@ -118,8 +114,8 @@ function showWindow(): void {
     height: bounds.height,
     x: bounds.x,
     y: bounds.y,
-    minWidth: 380,
-    minHeight: 480,
+    minWidth: 400,
+    minHeight: 600,
     resizable: true,
     maximizable: false,
     fullscreenable: false,
@@ -173,17 +169,30 @@ function quitApp(): void {
 // ── Print Service ─────────────────────────────────────────
 
 function startPrintService(): void {
-  // Start token refresh
   tokenRefreshInterval = startTokenRefresh();
 
-  // Start print listener (with reconnection support)
+  // Register callbacks for UI updates
+  onAreasChange((areas) => {
+    mainWindow?.webContents.send("areas:updated", areas);
+  });
+
+  onPrintersChange((printers) => {
+    mainWindow?.webContents.send("printers:updated", printers);
+  });
+
+  onConnectionStatusChange((status) => {
+    mainWindow?.webContents.send("connection:status", status);
+  });
+
   startListening((event) => {
     if (event.type === "printed") {
       const now = new Date().toLocaleTimeString("pt-BR");
       updateLastPrintTime(now);
       updateTrayStatus("connected", showWindow, quitApp);
+      mainWindow?.webContents.send("print:event", event);
       console.log(`[Print] Job ${event.jobId} printed on ${event.printerName}`);
     } else if (event.type === "failed") {
+      mainWindow?.webContents.send("print:event", event);
       console.error(`[Print] Job ${event.jobId} failed: ${event.error}`);
     }
   });
@@ -201,7 +210,7 @@ function stopPrintService(): void {
   updateTrayStatus("disconnected", showWindow, quitApp);
 }
 
-// ── IPC Handlers (communication with renderer) ────────────
+// ── IPC Handlers ─────────────────────────────────────────
 
 // Login
 ipcMain.handle("auth:login", async (_event, email: string, password: string) => {
@@ -229,23 +238,14 @@ ipcMain.handle("auth:status", () => {
   };
 });
 
-// List printers
+// List local printers
 ipcMain.handle("printer:list", async () => {
   const printers = await listPrinters();
   const defaultPrinter = await getDefaultPrinter();
-  return { printers, defaultPrinter, selected: store.get("selectedPrinter") };
+  return { printers, defaultPrinter };
 });
 
-// Select printer
-ipcMain.handle("printer:select", async (_event, printerName: string) => {
-  store.set("selectedPrinter", printerName);
-  // Update presence so web UI knows which printer we're using
-  await updatePresence();
-  updateTrayStatus("connected", showWindow, quitApp);
-  return { success: true };
-});
-
-// Test print
+// Test a specific printer
 ipcMain.handle("printer:test", async (_event, printerName: string) => {
   try {
     await printTest(printerName);
@@ -256,6 +256,21 @@ ipcMain.handle("printer:test", async (_event, printerName: string) => {
       error: err instanceof Error ? err.message : "Erro desconhecido",
     };
   }
+});
+
+// Get areas from portal (cached)
+ipcMain.handle("areas:list", () => {
+  return {
+    areas: getCachedAreas(),
+    mappings: store.get("areaMappings"),
+  };
+});
+
+// Set device friendly name
+ipcMain.handle("device:setName", async (_event, name: string) => {
+  store.set("deviceName", name);
+  await updatePresence();
+  return { success: true };
 });
 
 // Toggle auto-start
@@ -271,12 +286,18 @@ ipcMain.handle("app:toggleAutoStart", async (_event, enabled: boolean) => {
   }
 });
 
+// Get connection status
+ipcMain.handle("connection:status", () => {
+  return getConnectionStatus();
+});
+
 // Get app info
 ipcMain.handle("app:info", () => {
   const loginSettings = app.getLoginItemSettings();
   return {
     version: app.getVersion(),
     deviceId: store.get("deviceId"),
+    deviceName: store.get("deviceName"),
     autoStartEnabled: loginSettings.openAtLogin,
   };
 });
