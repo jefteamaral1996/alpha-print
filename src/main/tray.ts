@@ -133,7 +133,13 @@ function getTrayIcon(status: TrayStatus): Electron.NativeImage {
   if (cached) return cached;
 
   // Try to load from assets folder — use PNG (works on all platforms)
-  const assetsDir = path.join(__dirname, "..", "..", "assets");
+  // Check multiple possible locations (dev vs packaged)
+  const possibleAssetsDirs = [
+    path.join(app.getAppPath(), "assets"),
+    path.join(__dirname, "..", "..", "assets"),
+    path.join(__dirname, "..", "assets"),
+  ];
+  const assetsDir = possibleAssetsDirs.find((d) => existsSync(d)) || possibleAssetsDirs[0];
 
   const fileMap: Record<TrayStatus, string[]> = {
     connected: ["icon-green.png", "icon-green.ico", "icon.png"],

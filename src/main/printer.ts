@@ -9,6 +9,15 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { randomUUID } from "crypto";
 
+/** Full path to powershell.exe — avoids PATH issues in packaged Electron */
+const PS_PATH = join(
+  process.env.SystemRoot || "C:\\Windows",
+  "System32",
+  "WindowsPowerShell",
+  "v1.0",
+  "powershell.exe"
+);
+
 /**
  * List all printers available on the system (Windows).
  * Returns array of printer names.
@@ -23,7 +32,7 @@ export async function listPrinters(): Promise<string[]> {
 async function listPrintersPS(): Promise<string[]> {
   return new Promise((resolve) => {
     exec(
-      'powershell.exe -NoProfile -Command "Get-Printer | Select-Object -ExpandProperty Name"',
+      `"${PS_PATH}" -NoProfile -Command "Get-Printer | Select-Object -ExpandProperty Name"`,
       { timeout: 10000 },
       (error: Error | null, stdout: string) => {
         if (error) {
@@ -74,7 +83,7 @@ async function listPrintersWMIC(): Promise<string[]> {
 export async function getDefaultPrinter(): Promise<string> {
   return new Promise((resolve) => {
     exec(
-      'powershell -NoProfile -Command "(Get-CimInstance -ClassName Win32_Printer | Where-Object {$_.Default -eq $true}).Name"',
+      `"${PS_PATH}" -NoProfile -Command "(Get-CimInstance -ClassName Win32_Printer | Where-Object {$_.Default -eq $true}).Name"`,
       { timeout: 10000 },
       (error, stdout) => {
         if (error) {
@@ -215,9 +224,10 @@ async function sendToPrinter(
     writeFileSync(scriptFile, script, "utf-8");
 
     // Primary method: Win32 API WritePrinter via PowerShell script
-    const cmd = `powershell -NoProfile -ExecutionPolicy Bypass -File "${scriptFile}"`;
+    const cmd = `"${PS_PATH}" -NoProfile -ExecutionPolicy Bypass -File "${scriptFile}"`;
 
-    exec(cmd, { timeout: 30000 }, (error) => {
+    console.log("[Printer] Sending to:", printerName, "via Win32 API");
+    exec(cmd, { timeout: 30000 }, (error: Error | null, stdout: string, stderr: string) => {
       if (!error) {
         // Success — clean up and resolve
         cleanupTemp(tempFile);

@@ -84,17 +84,24 @@ app.on("before-quit", () => {
  * Resolve the icon path — try .png first (always exists), then .ico
  */
 function resolveIconPath(): string {
-  const assetsDir = path.join(__dirname, "..", "..", "assets");
-  const pngPath = path.join(assetsDir, "icon.png");
-  const icoPath = path.join(assetsDir, "icon.ico");
+  // In packaged app, assets are relative to app.getAppPath()
+  // In dev, they're relative to __dirname (dist/main/)
+  const possibleDirs = [
+    path.join(app.getAppPath(), "assets"),
+    path.join(__dirname, "..", "..", "assets"),
+    path.join(__dirname, "..", "assets"),
+    path.join(process.resourcesPath || "", "assets"),
+  ];
 
-  // Prefer ICO on Windows, but fallback to PNG if ICO doesn't exist
-  if (existsSync(icoPath)) return icoPath;
-  if (existsSync(pngPath)) return pngPath;
+  for (const dir of possibleDirs) {
+    const icoPath = path.join(dir, "icon.ico");
+    const pngPath = path.join(dir, "icon.png");
+    if (existsSync(icoPath)) return icoPath;
+    if (existsSync(pngPath)) return pngPath;
+  }
 
-  // Last resort — return PNG path even if it doesn't exist
-  // (Electron handles missing icons gracefully)
-  return pngPath;
+  // Last resort
+  return path.join(app.getAppPath(), "assets", "icon.png");
 }
 
 function showWindow(): void {
