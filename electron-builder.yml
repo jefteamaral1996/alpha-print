@@ -33,4 +33,4 @@ nsis:
 
 # Sem code signing — CEO decidiu nao pagar certificado
 # O SmartScreen do Windows vai aparecer na primeira instalacao
-# Guia de instalacao no Alpha Cardapio explica como prosseguir
+# electron-builder converte o PNG para ICO automaticamente

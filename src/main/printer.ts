@@ -14,22 +14,54 @@ import { randomUUID } from "crypto";
  * Returns array of printer names.
  */
 export async function listPrinters(): Promise<string[]> {
+  // Try PowerShell first, fallback to WMIC
+  const printers = await listPrintersPS();
+  if (printers.length > 0) return printers;
+  return listPrintersWMIC();
+}
+
+async function listPrintersPS(): Promise<string[]> {
   return new Promise((resolve) => {
     exec(
-      'powershell -NoProfile -Command "Get-Printer | Select-Object -ExpandProperty Name"',
+      'powershell.exe -NoProfile -Command "Get-Printer | Select-Object -ExpandProperty Name"',
       { timeout: 10000 },
-      (error, stdout) => {
+      (error: Error | null, stdout: string) => {
         if (error) {
-          console.error("[Printer] Error listing printers:", error.message);
+          console.error("[Printer] PowerShell error:", error.message);
           resolve([]);
           return;
         }
 
         const printers = stdout
           .split("\n")
-          .map((line) => line.trim())
-          .filter((line) => line.length > 0);
+          .map((line: string) => line.trim())
+          .filter((line: string) => line.length > 0);
 
+        console.log("[Printer] PowerShell found:", printers.length, "printers");
+        resolve(printers);
+      }
+    );
+  });
+}
+
+async function listPrintersWMIC(): Promise<string[]> {
+  return new Promise((resolve) => {
+    exec(
+      'wmic printer get name',
+      { timeout: 10000 },
+      (error: Error | null, stdout: string) => {
+        if (error) {
+          console.error("[Printer] WMIC error:", error.message);
+          resolve([]);
+          return;
+        }
+
+        const printers = stdout
+          .split("\n")
+          .map((line: string) => line.trim())
+          .filter((line: string) => line.length > 0 && line !== "Name");
+
+        console.log("[Printer] WMIC found:", printers.length, "printers");
         resolve(printers);
       }
     );
