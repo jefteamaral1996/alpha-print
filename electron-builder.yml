@@ -29,7 +29,7 @@ nsis:
   perMachine: true
   allowToChangeInstallationDirectory: false
   allowElevation: true
-  artifactName: "AlphaPrintSetup.${ext}"
+  artifactName: "AlphaPrintSetup-${version}.${ext}"
   createDesktopShortcut: always
   createStartMenuShortcut: true
   shortcutName: Alpha Print
