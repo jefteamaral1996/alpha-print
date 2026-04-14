@@ -28,6 +28,9 @@ contextBridge.exposeInMainWorld("alphaPrint", {
   // Connection status
   getConnectionStatus: () => ipcRenderer.invoke("connection:status"),
 
+  // Recent print jobs (last 3)
+  getRecentJobs: () => ipcRenderer.invoke("jobs:recent"),
+
   // Events from main process
   onAreasUpdated: (callback: (areas: any[]) => void) => {
     ipcRenderer.on("areas:updated", (_event, areas) => callback(areas));
@@ -40,5 +43,11 @@ contextBridge.exposeInMainWorld("alphaPrint", {
   },
   onConnectionStatusChanged: (callback: (status: any) => void) => {
     ipcRenderer.on("connection:status", (_event, status) => callback(status));
+  },
+  onRecentJobsUpdated: (callback: (jobs: any[]) => void) => {
+    ipcRenderer.on("jobs:recent-updated", (_event, jobs) => callback(jobs));
+  },
+  onPrintFailure: (callback: (data: any) => void) => {
+    ipcRenderer.on("print:failure", (_event, data) => callback(data));
   },
 });

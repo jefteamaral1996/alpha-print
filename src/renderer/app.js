@@ -19,7 +19,6 @@ const loginLoading = document.getElementById("login-loading");
 const loginError = document.getElementById("login-error");
 const storeInfo = document.getElementById("store-info");
 const printerList = document.getElementById("printer-list");
-const areasList = document.getElementById("areas-list");
 const appInfoEl = document.getElementById("app-info");
 const deviceNameInput = document.getElementById("device-name");
 const lastPrintEl = document.getElementById("last-print");
@@ -28,20 +27,11 @@ const internetDot = document.getElementById("internet-dot");
 const internetText = document.getElementById("internet-text");
 const serverDot = document.getElementById("server-dot");
 const serverText = document.getElementById("server-text");
+const recentJobsEl = document.getElementById("recent-jobs");
+const toastContainer = document.getElementById("toast-container");
 
 let printers = [];
-let areas = [];
-let mappings = {};
 let deviceNameTimer = null;
-
-// ── Area type labels ──
-const AREA_TYPE_LABELS = {
-  caixa: "Caixa",
-  cozinha: "Cozinha",
-  bar: "Bar",
-  expedicao: "Expedicao",
-  geral: "Geral",
-};
 
 // ── Init ──
 
@@ -54,15 +44,9 @@ async function init() {
   }
 
   // Listen for real-time updates from main process
-  api.onAreasUpdated((newAreas) => {
-    areas = newAreas;
-    renderAreas();
-  });
-
   api.onPrintersUpdated((newPrinters) => {
     printers = newPrinters;
     renderPrinters();
-    renderAreas(); // Re-render areas to update dropdowns
   });
 
   api.onPrintEvent((event) => {
@@ -70,6 +54,16 @@ async function init() {
       lastPrintEl.classList.remove("hidden");
       lastPrintTimeEl.textContent = new Date().toLocaleTimeString("pt-BR");
     }
+  });
+
+  // Listen for recent jobs updates
+  api.onRecentJobsUpdated((jobs) => {
+    renderRecentJobs(jobs);
+  });
+
+  // Listen for print failure notifications
+  api.onPrintFailure((data) => {
+    showFailureAlert(data);
   });
 
   // Listen for connection status changes from main process
@@ -186,9 +180,9 @@ async function showMainScreen(status) {
   });
 
   await refreshPrinters();
-  await refreshAreas();
   await loadAppInfo();
   await loadConnectionStatus();
+  await loadRecentJobs();
 }
 
 // ── Connection Status (initial load) ──
@@ -268,78 +262,6 @@ async function testPrinter(name) {
   }
 }
 
-// ── Areas (from portal, read-only — mapping is done on the portal) ──
-
-async function refreshAreas() {
-  areasList.innerHTML = '<p class="loading">Carregando areas do portal...</p>';
-
-  try {
-    const result = await api.getAreas();
-    areas = result.areas || [];
-    mappings = result.mappings || {};
-    renderAreas();
-  } catch (err) {
-    areasList.innerHTML = '<p class="loading">Erro ao carregar areas</p>';
-  }
-}
-
-function renderAreas() {
-  if (areas.length === 0) {
-    areasList.innerHTML = `
-      <div class="empty-state">
-        <p>Nenhuma area de impressao configurada.</p>
-        <p class="hint">Configure as areas no portal (Configuracoes > Impressao).</p>
-      </div>
-    `;
-    return;
-  }
-
-  areasList.innerHTML = "";
-
-  for (const area of areas) {
-    if (!area.enabled) continue;
-
-    const mapping = mappings[area.id];
-    const mappedPrinter = mapping ? mapping.printerName : "";
-
-    const card = document.createElement("div");
-    card.className = "area-card";
-
-    let mappingHtml;
-    if (mappedPrinter) {
-      mappingHtml = `
-        <div class="area-mapping read-only">
-          <span class="mapping-label">Impressora:</span>
-          <span class="mapping-value">${escapeHtml(mappedPrinter)}</span>
-          <span class="mapping-status active"></span>
-        </div>
-      `;
-    } else {
-      mappingHtml = `
-        <div class="area-mapping read-only no-printer">
-          <span class="mapping-label">Nenhuma impressora mapeada</span>
-          <span class="mapping-hint">Configure no portal</span>
-        </div>
-      `;
-    }
-
-    card.innerHTML = `
-      <div class="area-header">
-        <div class="area-info">
-          <span class="area-name">${escapeHtml(area.name)}</span>
-          <span class="area-type">${AREA_TYPE_LABELS[area.area_type] || area.area_type}</span>
-        </div>
-        <div class="area-meta">
-          <span class="area-detail">${area.copies} copia${area.copies > 1 ? "s" : ""}</span>
-          <span class="area-detail">${area.paper_width === 48 ? "80mm" : "58mm"}</span>
-        </div>
-      </div>
-      ${mappingHtml}
-    `;
-    areasList.appendChild(card);
-  }
-}
-
 // ── App Info ──
 
 async function loadAppInfo() {
@@ -362,6 +284,105 @@ async function loadAppInfo() {
   } catch {
     appInfoEl.innerHTML = "";
   }
+}
+
+// ── Recent Jobs ──
+
+async function loadRecentJobs() {
+  try {
+    const jobs = await api.getRecentJobs();
+    renderRecentJobs(jobs);
+  } catch {
+    // Ignore — will update when jobs arrive
+  }
+}
+
+function renderRecentJobs(jobs) {
+  if (!recentJobsEl) return;
+
+  if (!jobs || jobs.length === 0) {
+    recentJobsEl.innerHTML = '<p class="loading">Nenhuma impressao recente</p>';
+    return;
+  }
+
+  // Show only the last 3 jobs
+  const displayJobs = jobs.slice(0, 3);
+
+  recentJobsEl.innerHTML = "";
+
+  for (const job of displayJobs) {
+    const item = document.createElement("div");
+    const isSuccess = job.status === "printed";
+    item.className = `recent-job-item ${job.status}`;
+
+    const time = new Date(job.timestamp).toLocaleTimeString("pt-BR");
+
+    const iconSvg = isSuccess
+      ? `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`
+      : `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`;
+
+    const statusTitle = isSuccess ? "Impresso com sucesso" : "Falha na impressao";
+
+    let errorHtml = "";
+    if (job.error) {
+      errorHtml = `<div class="rj-error">${escapeHtml(job.error)}</div>`;
+    }
+
+    const clockSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`;
+
+    item.innerHTML = `
+      <div class="rj-icon-box ${isSuccess ? "success" : "error"}">${iconSvg}</div>
+      <div class="rj-info">
+        <span class="rj-title">${statusTitle}</span>
+        ${errorHtml}
+      </div>
+      <div class="rj-time-group">
+        ${clockSvg}
+        <span class="rj-time">${time}</span>
+      </div>
+    `;
+    recentJobsEl.appendChild(item);
+  }
+}
+
+// ── Toast Notifications (persistent until dismissed) ──
+
+function showFailureAlert(data) {
+  if (!toastContainer) return;
+
+  const message = data.error
+    ? `${data.printerName || "Impressora"}: ${data.error}`
+    : `Erro ao imprimir em ${data.printerName || "impressora desconhecida"}`;
+
+  const toast = document.createElement("div");
+  toast.className = "toast-item";
+  toast.innerHTML = `
+    <span class="toast-icon">&#x26A0;</span>
+    <div class="toast-text">
+      <strong>Falha na impressao!</strong>
+      <span>${escapeHtml(message)}</span>
+    </div>
+    <button class="toast-dismiss">&#x2715;</button>
+  `;
+
+  // Dismiss on X click — with slide-out animation
+  const dismissBtn = toast.querySelector(".toast-dismiss");
+  dismissBtn.addEventListener("click", () => {
+    toast.classList.add("removing");
+    toast.addEventListener("animationend", () => toast.remove());
+  });
+
+  toastContainer.appendChild(toast);
+}
+
+function dismissFailureAlert() {
+  // Legacy compat — dismiss all toasts
+  if (!toastContainer) return;
+  const toasts = toastContainer.querySelectorAll(".toast-item");
+  toasts.forEach((t) => {
+    t.classList.add("removing");
+    t.addEventListener("animationend", () => t.remove());
+  });
 }
 
 // ── Logout ──
@@ -392,6 +413,7 @@ function escapeAttr(str) {
 window.refreshPrinters = refreshPrinters;
 window.testPrinter = testPrinter;
 window.doLogout = doLogout;
+window.dismissFailureAlert = dismissFailureAlert;
 
 // ── Start ──
 init();

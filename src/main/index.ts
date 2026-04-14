@@ -28,6 +28,17 @@ let mainWindow: BrowserWindow | null = null;
 let tokenRefreshInterval: NodeJS.Timeout | null = null;
 let isQuitting = false;
 
+// ── Recent Jobs History (last 3) ─────────────────────────
+interface RecentJob {
+  id: string;
+  printerName: string;
+  status: "printed" | "failed";
+  error?: string;
+  timestamp: string;
+}
+const recentJobs: RecentJob[] = [];
+const MAX_RECENT_JOBS = 3;
+
 // ── Single Instance Lock ──────────────────────────────────
 const gotTheLock = app.requestSingleInstanceLock();
 
@@ -205,16 +216,36 @@ function startPrintService(): void {
   });
 
   startListening((event) => {
+    // Track recent jobs (printed and failed)
+    if (event.type === "printed" || event.type === "failed") {
+      const job: RecentJob = {
+        id: event.jobId,
+        printerName: event.printerName,
+        status: event.type,
+        error: event.error,
+        timestamp: new Date().toISOString(),
+      };
+      recentJobs.unshift(job);
+      if (recentJobs.length > MAX_RECENT_JOBS) recentJobs.pop();
+      mainWindow?.webContents.send("jobs:recent-updated", recentJobs);
+    }
+
     if (event.type === "printed") {
       const now = new Date().toLocaleTimeString("pt-BR");
       updateLastPrintTime(now);
       updateTrayStatus("connected", showWindow, quitApp);
-      mainWindow?.webContents.send("print:event", event);
       console.log(`[Print] Job ${event.jobId} printed on ${event.printerName}`);
     } else if (event.type === "failed") {
-      mainWindow?.webContents.send("print:event", event);
+      // Send dedicated failure notification to renderer
+      mainWindow?.webContents.send("print:failure", {
+        jobId: event.jobId,
+        printerName: event.printerName,
+        error: event.error,
+      });
       console.error(`[Print] Job ${event.jobId} failed: ${event.error}`);
     }
+
+    mainWindow?.webContents.send("print:event", event);
   });
 
   updateTrayStatus("connected", showWindow, quitApp);
@@ -296,6 +327,11 @@ ipcMain.handle("device:setName", async (_event, name: string) => {
 // Get connection status
 ipcMain.handle("connection:status", () => {
   return getConnectionStatus();
+});
+
+// Get recent print jobs (last 3)
+ipcMain.handle("jobs:recent", () => {
+  return [...recentJobs];
 });
 
 // Get app info

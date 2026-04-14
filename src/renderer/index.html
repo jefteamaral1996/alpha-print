@@ -36,6 +36,9 @@
       <p class="footer-text">Use suas credenciais do Alpha Cardapio</p>
     </div>
 
+    <!-- Toast container for failure notifications (fixed bottom-right) -->
+    <div id="toast-container" class="toast-container"></div>
+
     <!-- Main Screen (read-only executor) -->
     <div id="main-screen" class="screen hidden">
       <div class="header">
@@ -69,6 +72,14 @@
         </div>
       </div>
 
+      <!-- Recent Print Jobs -->
+      <div class="section">
+        <h3>Ultimas impressoes</h3>
+        <div id="recent-jobs" class="recent-jobs">
+          <p class="loading">Nenhuma impressao recente</p>
+        </div>
+      </div>
+
       <!-- Detected Printers -->
       <div class="section">
         <div class="section-header">
@@ -80,13 +91,10 @@
         </div>
       </div>
 
-      <!-- Areas from Portal (read-only — mapping is done on the portal) -->
-      <div class="section">
-        <h3>Areas de impressao</h3>
-        <p class="section-hint">Configuradas e mapeadas no portal. Atualizacoes aparecem aqui automaticamente.</p>
-        <div id="areas-list" class="areas-list">
-          <p class="loading">Carregando areas do portal...</p>
-        </div>
+      <!-- Portal config notice -->
+      <div class="portal-notice">
+        <span class="portal-notice-icon">&#x2139;</span>
+        <span>As configuracoes de impressoras e areas sao feitas no <strong>portal</strong> (Configuracoes &gt; Impressao).</span>
       </div>
 
       <!-- Info -->
