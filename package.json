@@ -8,9 +8,7 @@
   "private": true,
   "scripts": {
     "dev": "tsc && electron .",
-    "prebuild": "npm version patch --no-git-tag-version",
     "build": "tsc && electron-builder --win",
-    "prebuild:dir": "npm version patch --no-git-tag-version",
     "build:dir": "tsc && electron-builder --win --dir",
     "typecheck": "tsc --noEmit"
   },

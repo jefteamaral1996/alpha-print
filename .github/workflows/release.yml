@@ -1,0 +1,67 @@
+name: Build & Release Alpha Print
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Electron app
+        run: npx tsc && npx electron-builder --win --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get version from package.json
+        id: version
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building version: $VERSION"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Alpha Print v${{ steps.version.outputs.version }}"
+          body: |
+            ## Alpha Print v${{ steps.version.outputs.version }}
+
+            ### Download
+            Baixe o instalador `.exe` abaixo e execute para instalar/atualizar o Alpha Print.
+
+            > **Nota:** Na primeira instalacao, o Windows SmartScreen pode exibir um alerta. Clique em "Mais informacoes" e depois "Executar assim mesmo".
+          draft: false
+          prerelease: false
+          files: |
+            release/AlphaPrintSetup.exe
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Notify site to update download link
+        if: success()
+        shell: bash
+        run: |
+          echo "Release v${{ steps.version.outputs.version }} created successfully!"
+          echo "Download URL: https://github.com/${{ github.repository }}/releases/latest/download/AlphaPrintSetup.exe"
+          echo ""
+          echo "The site uses /releases/latest/download/ so it will automatically point to this new version."

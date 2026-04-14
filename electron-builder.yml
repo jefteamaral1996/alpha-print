@@ -28,6 +28,7 @@ nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: false
+  artifactName: "AlphaPrintSetup.${ext}"
   createDesktopShortcut: always
   createStartMenuShortcut: true
   shortcutName: Alpha Print
