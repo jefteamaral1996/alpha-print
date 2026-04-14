@@ -92,8 +92,8 @@ export function startListening(onEvent: PrintCallback): void {
   syncPrintersToDb();
   printerSyncTimer = setInterval(syncPrintersToDb, 60000); // Every 60s
 
-  // Load areas from portal
-  loadAreasFromPortal();
+  // Load areas from portal, then load mappings (mappings need areas for names)
+  loadAreasFromPortal().then(() => loadMappingsFromDb());
 
   // Process any pending jobs
   processPendingJobs();
@@ -204,10 +204,11 @@ function setupChannels(storeId: string): void {
         filter: `store_id=eq.${storeId}`,
       },
       (payload) => {
-        const row = payload.new as { device_id?: string } | null;
+        // For DELETE events, payload.new is null — use payload.old instead
+        const row = (payload.new ?? payload.old) as { device_id?: string } | null;
         // Only reload if it's for our device
         if (row && row.device_id === deviceId) {
-          console.log("[PrintListener] Mappings changed for this device, reloading...");
+          console.log(`[PrintListener] Mappings ${payload.eventType} for this device, reloading...`);
           loadMappingsFromDb();
         }
       }
@@ -569,6 +570,10 @@ async function loadMappingsFromDb(): Promise<void> {
       }
       store.set("areaMappings", mappings);
       console.log(`[PrintListener] Loaded ${Object.keys(mappings).length} area mappings from DB`);
+
+      // Re-process pending jobs — mappings may have changed and previously
+      // skipped jobs (no mapping for this device) can now be printed
+      processPendingJobs();
     }
   } catch (err) {
     console.error("[PrintListener] Error loading mappings:", err);
@@ -670,7 +675,8 @@ async function processPendingJobs(): Promise<void> {
  * Priority:
  * 1. print_area_id -> device_area_mappings -> local printer
  * 2. printer_name (legacy/direct)
- * 3. null (skip this job — no mapping for this device)
+ * 3. Default printer from cachedPrinters (first one)
+ * 4. null (skip this job — no mapping for this device)
  */
 function resolveJobPrinter(job: {
   print_area_id?: string | null;
@@ -693,8 +699,12 @@ function resolveJobPrinter(job: {
     return job.printer_name;
   }
 
-  // 3. No mapping, no printer_name — try default printer
-  // Return empty string to indicate "use any available"
+  // 3. No mapping, no printer_name — try default/first available printer
+  if (cachedPrinters.length > 0) {
+    return cachedPrinters[0];
+  }
+
+  // 4. No printers at all
   return "";
 }
 

@@ -241,7 +241,9 @@ async function sendToPrinter(
 
       // Fallback: try via shared printer path (\\localhost\PRINTER)
       // This works if the printer is shared on the network
-      const shareName = printerName.replace(/"/g, "");
+      // Sanitize printer name: remove quotes, ampersands, pipes, and other
+      // shell metacharacters to prevent command injection
+      const shareName = printerName.replace(/["|&<>^%!`]/g, "");
       const fallbackCmd =
         `cmd /c copy /b "${tempFile}" "\\\\localhost\\${shareName}"`;
 
