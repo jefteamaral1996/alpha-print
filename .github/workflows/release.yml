@@ -52,7 +52,7 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            release/AlphaPrintSetup.exe
+            release/AlphaPrintSetup-${{ steps.version.outputs.version }}.exe
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -62,6 +62,6 @@ jobs:
         shell: bash
         run: |
           echo "Release v${{ steps.version.outputs.version }} created successfully!"
-          echo "Download URL: https://github.com/${{ github.repository }}/releases/latest/download/AlphaPrintSetup.exe"
+          echo "Download URL: https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}/AlphaPrintSetup-${{ steps.version.outputs.version }}.exe"
           echo ""
-          echo "The site uses /releases/latest/download/ so it will automatically point to this new version."
+          echo "The portal fetches /releases/latest via GitHub API to resolve the versioned asset name dynamically."
