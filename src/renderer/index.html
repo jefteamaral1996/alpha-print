@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+  <title>Alpha Print</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Login Screen -->
+    <div id="login-screen" class="screen">
+      <div class="logo">
+        <div class="logo-icon">AP</div>
+        <h1>Alpha Print</h1>
+        <p class="subtitle">Impressao automatica para restaurantes</p>
+      </div>
+
+      <form id="login-form" class="form">
+        <div class="field">
+          <label for="email">E-mail</label>
+          <input type="email" id="email" placeholder="seu@email.com" required autocomplete="email" />
+        </div>
+        <div class="field">
+          <label for="password">Senha</label>
+          <input type="password" id="password" placeholder="Sua senha" required autocomplete="current-password" />
+        </div>
+        <button type="submit" id="login-btn" class="btn-primary">
+          <span id="login-text">Entrar</span>
+          <span id="login-loading" class="hidden">Entrando...</span>
+        </button>
+        <p id="login-error" class="error hidden"></p>
+      </form>
+
+      <p class="footer-text">Use suas credenciais do Alpha Cardapio</p>
+    </div>
+
+    <!-- Config Screen -->
+    <div id="config-screen" class="screen hidden">
+      <div class="header">
+        <h2>Alpha Print</h2>
+        <div id="store-info" class="store-info"></div>
+      </div>
+
+      <div class="section">
+        <h3>Status</h3>
+        <div id="status-indicator" class="status-row">
+          <div class="status-dot green"></div>
+          <span>Conectado e aguardando impressoes</span>
+        </div>
+      </div>
+
+      <div class="section">
+        <h3>Impressora</h3>
+        <div id="printer-list" class="printer-list">
+          <p class="loading">Buscando impressoras...</p>
+        </div>
+        <div class="actions">
+          <button id="refresh-btn" class="btn-secondary" onclick="refreshPrinters()">Atualizar lista</button>
+          <button id="test-btn" class="btn-secondary" onclick="testPrint()" disabled>Imprimir teste</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <h3>Informacoes</h3>
+        <div id="app-info" class="info-grid"></div>
+      </div>
+
+      <div class="section">
+        <button id="logout-btn" class="btn-danger" onclick="doLogout()">Desconectar conta</button>
+        <p class="hint">O Alpha Print continuara na bandeja do sistema enquanto estiver aberto.</p>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

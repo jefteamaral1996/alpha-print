@@ -1,0 +1,25 @@
+{
+  "name": "alpha-print",
+  "version": "1.0.0",
+  "description": "Alpha Print - Aplicativo de impressao do Alpha Cardapio",
+  "main": "dist/main/index.js",
+  "author": "Alpha Cardapio <contato@alphacardapio.com>",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "dev": "tsc && electron .",
+    "build": "tsc && electron-builder --win",
+    "build:dir": "tsc && electron-builder --win --dir",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.4",
+    "electron-store": "^8.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "electron": "^36.0.0",
+    "electron-builder": "^26.0.0",
+    "typescript": "^5.8.0"
+  }
+}

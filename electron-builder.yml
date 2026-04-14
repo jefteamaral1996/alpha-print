@@ -1,0 +1,37 @@
+appId: com.alphacardapio.print
+productName: Alpha Print
+copyright: Copyright (c) 2026 Alpha Cardapio
+
+directories:
+  output: release
+  buildResources: assets
+
+files:
+  - dist/**/*
+  - assets/**/*
+  - src/renderer/**/*
+  - "!node_modules/**/*.ts"
+  - "!node_modules/**/*.map"
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: assets/icon.ico
+
+nsis:
+  oneClick: true
+  perMachine: false
+  allowToChangeInstallationDirectory: false
+  installerIcon: assets/icon.ico
+  uninstallerIcon: assets/icon.ico
+  installerHeaderIcon: assets/icon.ico
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Alpha Print
+  runAfterFinish: true
+
+# Sem code signing — CEO decidiu nao pagar certificado
+# O SmartScreen do Windows vai aparecer na primeira instalacao
+# Guia de instalacao no Alpha Cardapio explica como prosseguir
