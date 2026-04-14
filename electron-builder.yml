@@ -21,18 +21,20 @@ win:
     - target: nsis
       arch:
         - x64
-        - ia32
   icon: assets/icon.png
   signAndEditExecutable: false
 
 nsis:
-  oneClick: true
+  oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: false
-  createDesktopShortcut: true
+  createDesktopShortcut: always
   createStartMenuShortcut: true
   shortcutName: Alpha Print
   runAfterFinish: true
+  installerLanguages:
+    - pt_BR
+  language: 1046
 
 # Sem code signing — CEO decidiu nao pagar certificado
 # O SmartScreen do Windows vai aparecer na primeira instalacao

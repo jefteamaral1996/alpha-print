@@ -1,6 +1,6 @@
 {
   "name": "alpha-print",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Alpha Print - Aplicativo de impressao do Alpha Cardapio",
   "main": "dist/main/index.js",
   "author": "Alpha Cardapio <contato@alphacardapio.com>",
@@ -8,7 +8,9 @@
   "private": true,
   "scripts": {
     "dev": "tsc && electron .",
+    "prebuild": "npm version patch --no-git-tag-version",
     "build": "tsc && electron-builder --win",
+    "prebuild:dir": "npm version patch --no-git-tag-version",
     "build:dir": "tsc && electron-builder --win --dir",
     "typecheck": "tsc --noEmit"
   },
