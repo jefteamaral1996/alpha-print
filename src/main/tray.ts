@@ -142,12 +142,18 @@ function getTrayIcon(status: TrayStatus): Electron.NativeImage {
 
   // Try to load from assets folder — use PNG (works on all platforms)
   // Check multiple possible locations (dev vs packaged)
+  // When asarUnpack is used, files are at app.asar.unpacked/assets/
   const possibleAssetsDirs = [
+    path.join(app.getAppPath() + ".unpacked", "assets"),
+    path.join(process.resourcesPath || "", "assets"),
     path.join(app.getAppPath(), "assets"),
     path.join(__dirname, "..", "..", "assets"),
     path.join(__dirname, "..", "assets"),
+    path.join(app.getAppPath(), "..", "assets"),
   ];
-  const assetsDir = possibleAssetsDirs.find((d) => existsSync(d)) || possibleAssetsDirs[0];
+  const assetsDir = possibleAssetsDirs.find((d) => {
+    try { return existsSync(d); } catch { return false; }
+  }) || possibleAssetsDirs[1];
 
   const fileMap: Record<TrayStatus, string[]> = {
     connected: ["icon-green.png", "icon-green.ico", "icon.png"],

@@ -83,20 +83,35 @@ app.on("before-quit", () => {
 // ── Window Management ─────────────────────────────────────
 
 function resolveIconPath(): string {
+  // Check multiple possible locations (dev vs packaged ASAR vs unpacked)
+  // When asarUnpack is used, files are at app.asar.unpacked/assets/
   const possibleDirs = [
+    path.join(app.getAppPath() + ".unpacked", "assets"),
+    path.join(process.resourcesPath || "", "assets"),
     path.join(app.getAppPath(), "assets"),
     path.join(__dirname, "..", "..", "assets"),
     path.join(__dirname, "..", "assets"),
-    path.join(process.resourcesPath || "", "assets"),
+    path.join(app.getAppPath(), "..", "assets"),
   ];
 
   for (const dir of possibleDirs) {
-    const icoPath = path.join(dir, "icon.ico");
-    const pngPath = path.join(dir, "icon.png");
-    if (existsSync(icoPath)) return icoPath;
-    if (existsSync(pngPath)) return pngPath;
+    try {
+      const icoPath = path.join(dir, "icon.ico");
+      const pngPath = path.join(dir, "icon.png");
+      if (existsSync(icoPath)) {
+        console.log("[App] Icon found at:", icoPath);
+        return icoPath;
+      }
+      if (existsSync(pngPath)) {
+        console.log("[App] Icon found at:", pngPath);
+        return pngPath;
+      }
+    } catch {
+      // Skip inaccessible dirs
+    }
   }
 
+  console.warn("[App] No icon found in any location, using fallback");
   return path.join(app.getAppPath(), "assets", "icon.png");
 }
 
@@ -273,19 +288,6 @@ ipcMain.handle("device:setName", async (_event, name: string) => {
   return { success: true };
 });
 
-// Toggle auto-start
-ipcMain.handle("app:toggleAutoStart", async (_event, enabled: boolean) => {
-  try {
-    app.setLoginItemSettings({ openAtLogin: enabled, name: "Alpha Print" });
-    return { success: true, enabled };
-  } catch (err) {
-    return {
-      success: false,
-      error: err instanceof Error ? err.message : "Erro desconhecido",
-    };
-  }
-});
-
 // Get connection status
 ipcMain.handle("connection:status", () => {
   return getConnectionStatus();
@@ -293,11 +295,9 @@ ipcMain.handle("connection:status", () => {
 
 // Get app info
 ipcMain.handle("app:info", () => {
-  const loginSettings = app.getLoginItemSettings();
   return {
     version: app.getVersion(),
     deviceId: store.get("deviceId"),
     deviceName: store.get("deviceName"),
-    autoStartEnabled: loginSettings.openAtLogin,
   };
 });

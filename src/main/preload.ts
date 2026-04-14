@@ -22,10 +22,8 @@ contextBridge.exposeInMainWorld("alphaPrint", {
   // Device
   setDeviceName: (name: string) => ipcRenderer.invoke("device:setName", name),
 
-  // App info & settings
+  // App info
   getAppInfo: () => ipcRenderer.invoke("app:info"),
-  toggleAutoStart: (enabled: boolean) =>
-    ipcRenderer.invoke("app:toggleAutoStart", enabled),
 
   // Connection status
   getConnectionStatus: () => ipcRenderer.invoke("connection:status"),

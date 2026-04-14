@@ -13,6 +13,9 @@ files:
   - "!node_modules/**/*.ts"
   - "!node_modules/**/*.map"
 
+asarUnpack:
+  - assets/**/*
+
 win:
   target:
     - target: nsis
