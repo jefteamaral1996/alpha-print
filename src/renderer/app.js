@@ -276,17 +276,29 @@ function renderPrinters() {
   for (const name of printers) {
     const item = document.createElement("div");
     item.className = "printer-item read-only";
-    item.innerHTML = `
-      <div class="printer-icon">&#x1F5A8;</div>
-      <span class="name">${escapeHtml(name)}</span>
-      <button class="btn-test" onclick="testPrinter('${escapeAttr(name)}')" title="Testar impressora">Testar</button>
-    `;
+
+    const icon = document.createElement("div");
+    icon.className = "printer-icon";
+    icon.textContent = "\uD83D\uDDA8";
+
+    const nameSpan = document.createElement("span");
+    nameSpan.className = "name";
+    nameSpan.textContent = name;
+
+    const btn = document.createElement("button");
+    btn.className = "btn-test";
+    btn.title = "Testar impressora";
+    btn.textContent = "Testar";
+    btn.addEventListener("click", () => testPrinter(name, btn));
+
+    item.appendChild(icon);
+    item.appendChild(nameSpan);
+    item.appendChild(btn);
     printerList.appendChild(item);
   }
 }
 
-async function testPrinter(name) {
-  const btn = event.target;
+async function testPrinter(name, btn) {
   btn.disabled = true;
   btn.textContent = "...";
 
@@ -550,13 +562,22 @@ function escapeAttr(str) {
   return str.replace(/'/g, "\\'").replace(/"/g, "&quot;");
 }
 
-// Make functions available globally for onclick handlers
-window.refreshPrinters = refreshPrinters;
-window.testPrinter = testPrinter;
-window.doLogout = doLogout;
-window.dismissFailureAlert = dismissFailureAlert;
-window.doReconnect = doReconnect;
-window.doCheckUpdates = doCheckUpdates;
+// ── Static Button Event Listeners ──
+// Botoes com id fixo: vinculados via addEventListener (CSP bloqueia onclick inline)
+
+document.addEventListener("DOMContentLoaded", () => {
+  const refreshBtn = document.getElementById("refresh-btn");
+  if (refreshBtn) refreshBtn.addEventListener("click", refreshPrinters);
+
+  const logoutBtn = document.getElementById("logout-btn");
+  if (logoutBtn) logoutBtn.addEventListener("click", doLogout);
+
+  const reconnectBtnEl = document.getElementById("reconnect-btn");
+  if (reconnectBtnEl) reconnectBtnEl.addEventListener("click", doReconnect);
+
+  const checkUpdateBtnEl = document.getElementById("check-update-btn");
+  if (checkUpdateBtnEl) checkUpdateBtnEl.addEventListener("click", doCheckUpdates);
+});
 
 // ── Start ──
 init();

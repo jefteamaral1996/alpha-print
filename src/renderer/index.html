@@ -68,7 +68,7 @@
         </div>
         <!-- Mecanismo 4: Botao manual de reconexao — aparece so quando desconectado -->
         <div id="reconnect-row" class="reconnect-row hidden">
-          <button id="reconnect-btn" class="btn-reconnect" onclick="doReconnect()">Reconectar agora</button>
+          <button id="reconnect-btn" class="btn-reconnect">Reconectar agora</button>
         </div>
         <div id="last-print" class="last-print hidden">
           <span class="label">Ultima impressao:</span>
@@ -88,7 +88,7 @@
       <div class="section">
         <div class="section-header">
           <h3>Impressoras detectadas</h3>
-          <button id="refresh-btn" class="btn-icon" onclick="refreshPrinters()" title="Atualizar lista">&#x21bb;</button>
+          <button id="refresh-btn" class="btn-icon" title="Atualizar lista">&#x21bb;</button>
         </div>
         <div id="printer-list" class="printer-list">
           <p class="loading">Buscando impressoras...</p>
@@ -118,7 +118,7 @@
           <div id="update-progress-bar-wrap" class="update-progress-bar-wrap hidden">
             <div id="update-progress-bar" class="update-progress-bar" style="width: 0%"></div>
           </div>
-          <button id="check-update-btn" class="btn-secondary" onclick="doCheckUpdates()">
+          <button id="check-update-btn" class="btn-secondary">
             Verificar atualizacoes
           </button>
         </div>
@@ -132,7 +132,7 @@
 
       <!-- Logout -->
       <div class="section">
-        <button id="logout-btn" class="btn-danger" onclick="doLogout()">Desconectar conta</button>
+        <button id="logout-btn" class="btn-danger">Desconectar conta</button>
         <p class="hint">O Alpha Print continuara na bandeja do sistema enquanto estiver aberto.</p>
       </div>
     </div>
