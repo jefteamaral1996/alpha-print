@@ -1,6 +1,6 @@
 {
   "name": "alpha-print",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "description": "Alpha Print - Aplicativo de impressao do Alpha Cardapio",
   "main": "dist/main/index.js",
   "author": "Alpha Cardapio <contato@alphacardapio.com>",
