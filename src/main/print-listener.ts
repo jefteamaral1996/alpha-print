@@ -777,39 +777,43 @@ async function processPendingJobs(): Promise<void> {
 /**
  * Resolve which physical printer to use for a job.
  * Priority:
- * 1. print_area_id -> device_area_mappings -> local printer
- * 2. printer_name (legacy/direct)
- * 3. Default printer from cachedPrinters (first one)
- * 4. null (skip this job — no mapping for this device)
+ * 1. printer_name explícito no job (modality_printer_overrides definido pelo portal)
+ * 2. print_area_id -> device_area_mappings -> impressora local deste device
+ * 3. null (sem mapeamento para esta área neste device — outro device pode imprimir)
+ *
+ * NOTA: printer_name agora tem prioridade máxima quando presente. Isso garante que
+ * overrides de modalidade configurados no portal (modality_printer_overrides) sejam
+ * respeitados pelo Alpha Print desktop, independentemente de device_area_mappings.
+ * Antes desta correção, o campo printer_name era ignorado quando print_area_id existia,
+ * causando impressão sempre na impressora mapeada localmente (ex: "Alpha Print RAW").
  */
 function resolveJobPrinter(job: {
   print_area_id?: string | null;
   printer_name?: string;
 }): string | null {
-  // 1. If job has a print_area_id, use area mapping
+  // 1. printer_name explícito no job — tem prioridade máxima.
+  // O portal grava aqui o resultado de modality_printer_overrides quando definido.
+  // Se este campo está preenchido, a decisão de impressora já foi tomada pelo portal:
+  // respeitar sem verificar device_area_mappings.
+  if (job.printer_name) {
+    console.log(`[resolveJobPrinter] Usando printer_name do job (override/direto): ${job.printer_name}`);
+    return job.printer_name;
+  }
+
+  // 2. Se job tem print_area_id mas sem printer_name, usa mapeamento local do device
   if (job.print_area_id) {
     const mappings = store.get("areaMappings");
     const mapping = mappings[job.print_area_id];
     if (mapping && mapping.enabled && mapping.printerName) {
+      console.log(`[resolveJobPrinter] Usando device_area_mapping para área ${job.print_area_id}: ${mapping.printerName}`);
       return mapping.printerName;
     }
-    // No mapping for this area on this device — skip
-    // (another Alpha Print instance on another PC might handle it)
+    // Sem mapeamento local para esta área neste device — outro device pode imprimir
     return null;
   }
 
-  // 2. Legacy: job has printer_name directly
-  if (job.printer_name) {
-    return job.printer_name;
-  }
-
-  // 3. No mapping, no printer_name — try default/first available printer
-  if (cachedPrinters.length > 0) {
-    return cachedPrinters[0];
-  }
-
-  // 4. No printers at all
-  return "";
+  // 3. Sem printer_name e sem print_area_id — não há como resolver
+  return null;
 }
 
 /**
