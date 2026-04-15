@@ -24,6 +24,7 @@ import {
   forceReconnect,
 } from "./print-listener";
 import { createTray, updateTrayStatus, updateLastPrintTime, destroyTray } from "./tray";
+import { initAutoUpdater } from "./updater";
 
 let mainWindow: BrowserWindow | null = null;
 let tokenRefreshInterval: NodeJS.Timeout | null = null;
@@ -68,6 +69,7 @@ function setupAutoStart(): void {
 
 app.on("ready", async () => {
   setupAutoStart();
+  initAutoUpdater();
   createTray(showWindow, quitApp);
 
   if (isLoggedIn()) {
