@@ -206,6 +206,68 @@ Write-Host 'OK'
 `;
 }
 
+/**
+ * Converte o stderr bruto do PowerShell em mensagem legivel pelo usuario.
+ * O PowerShell pode retornar stack traces completos com caminhos de arquivo,
+ * CategoryInfo, FullyQualifiedErrorId, etc. Esta funcao extrai apenas o
+ * codigo de erro Win32 e retorna uma mensagem clara e acionavel.
+ *
+ * @param rawError - stderr/message bruto do erro do PowerShell
+ * @param printerName - nome da impressora (para incluir na mensagem)
+ */
+function humanizePrintError(rawError: string, printerName: string): string {
+  // Extrai codigo de erro Win32 do stderr do PowerShell
+  // Ex: "(erro 1801)" ou "error 1801" ou ocorrencias em excecoes C#
+  const errorCodeMatch =
+    rawError.match(/\b(?:erro|error)\s+(\d+)\b/i) ||
+    rawError.match(/LastWin32Error[:\s]+(\d+)/i) ||
+    rawError.match(/GetLastError\(\)\s*[=:]\s*(\d+)/i);
+
+  const code = errorCodeMatch ? parseInt(errorCodeMatch[1], 10) : null;
+  const name = printerName ? `'${printerName}'` : "a impressora";
+
+  switch (code) {
+    case 1801:
+      return (
+        `Impressora ${name} nao encontrada. ` +
+        `Verifique se o nome esta correto nas configuracoes e se a impressora esta instalada neste computador.`
+      );
+    case 5:
+      return (
+        `Sem permissao para acessar a impressora ${name}. ` +
+        `Tente executar o Alpha Print como administrador ou verifique as permissoes de impressora no Windows.`
+      );
+    case 1722:
+    case 1753:
+      return (
+        `Servico de impressao do Windows com problema. ` +
+        `Abra Servicos do Windows (services.msc), encontre "Print Spooler" e clique em Reiniciar.`
+      );
+    case 2:
+      return (
+        `Impressora ${name} nao esta acessivel no momento. ` +
+        `Verifique se ela esta ligada e conectada ao computador.`
+      );
+    case 6:
+      return (
+        `Falha ao comunicar com a impressora ${name}. ` +
+        `Tente desligar e ligar a impressora e tente novamente.`
+      );
+    case 1797:
+      return (
+        `Driver da impressora ${name} nao esta instalado corretamente. ` +
+        `Reinstale o driver da impressora e tente novamente.`
+      );
+    default: {
+      const codeInfo = code ? ` (codigo: ${code})` : "";
+      return (
+        `Falha ao imprimir em ${name}. ` +
+        `Verifique se a impressora esta ligada e conectada${codeInfo}.`
+      );
+    }
+  }
+}
+
 async function sendToPrinter(
   printerName: string,
   data: Buffer
@@ -252,13 +314,10 @@ async function sendToPrinter(
         cleanupTemp(scriptFile);
 
         if (err2) {
-          reject(
-            new Error(
-              `Falha ao imprimir em "${printerName}". ` +
-              `Verifique se a impressora esta ligada e conectada. ` +
-              `Erro: ${error.message}`
-            )
-          );
+          // Usa o stderr do erro primario (Win32) para extrair o codigo de erro
+          // e gerar mensagem humanizada — o dump tecnico NAO e repassado ao usuario
+          const rawStderr = error.message || err2.message || "";
+          reject(new Error(humanizePrintError(rawStderr, printerName)));
         } else {
           resolve();
         }
