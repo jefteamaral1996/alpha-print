@@ -15,9 +15,28 @@
 ; INSTALADOR — Paginas e acoes
 ; =============================================================
 
+; --- Re-habilita logs na caixa de detalhes antes da copia de arquivos ---
+; PROBLEMA: o installSection.nsh do electron-builder executa
+;   SetDetailsPrint none
+; antes de copiar os arquivos, silenciando toda a caixa de logs.
+; SOLUCAO: usar o hook MUI_PAGE_CUSTOMFUNCTION_SHOW da pagina INSTFILES
+; para chamar SetDetailsPrint both logo antes da instalacao comecar.
+; Este macro e inserido em assistedInstaller.nsh ANTES do MUI_PAGE_INSTFILES.
+!macro customPageAfterChangeDir
+  !define MUI_PAGE_CUSTOMFUNCTION_SHOW EnableInstDetailsLog
+  Function EnableInstDetailsLog
+    SetDetailsPrint both
+  FunctionEnd
+!macroend
+
 ; --- Matar processo do Alpha Print antes de instalar/atualizar ---
 ; Resolve o erro "Nao e possivel fechar o Alpha Print" do NSIS
 !macro customInstall
+  ; Garante que os DetailPrint abaixo sejam visiveis
+  ; (o installSection.nsh chama SetDetailsPrint none antes da copia,
+  ;  mas o hook SHOW acima ja re-habilita. Mantemos aqui como seguranca.)
+  SetDetailsPrint both
+
   ; Mata o processo caso esteja rodando
   nsExec::ExecToLog "taskkill /f /im $\"Alpha Print.exe$\""
 

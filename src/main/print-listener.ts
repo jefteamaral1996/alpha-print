@@ -777,30 +777,40 @@ async function processPendingJobs(): Promise<void> {
 /**
  * Resolve which physical printer to use for a job.
  * Priority:
- * 1. printer_name explícito no job (modality_printer_overrides definido pelo portal)
- * 2. print_area_id -> device_area_mappings -> impressora local deste device
+ * 1. printer_name explícito no job — SE for uma impressora Windows instalada localmente.
+ *    O portal pode gravar aqui o resultado de modality_printer_overrides (nome real da
+ *    impressora Windows) OU o nome lógico da área (ex: "Caixa"). Só usamos direto se
+ *    o nome existir em cachedPrinters — caso contrário é nome lógico e cai no passo 2.
+ * 2. print_area_id -> device_area_mappings -> impressora local deste device.
+ *    Também usado quando printer_name não corresponde a uma impressora Windows real.
  * 3. null (sem mapeamento para esta área neste device — outro device pode imprimir)
  *
- * NOTA: printer_name agora tem prioridade máxima quando presente. Isso garante que
- * overrides de modalidade configurados no portal (modality_printer_overrides) sejam
- * respeitados pelo Alpha Print desktop, independentemente de device_area_mappings.
- * Antes desta correção, o campo printer_name era ignorado quando print_area_id existia,
- * causando impressão sempre na impressora mapeada localmente (ex: "Alpha Print RAW").
+ * CORREÇÃO DE BUG (2026-04-15): O portal às vezes grava em printer_name o nome lógico
+ * da área (ex: "Caixa") em vez do nome real da impressora Windows. Usar esse valor
+ * diretamente causava erro Win32 1801 (impressora não encontrada) mesmo quando a
+ * impressão ocorria com sucesso pelo mapeamento local. A correção valida se o
+ * printer_name existe nas impressoras instaladas antes de usá-lo diretamente.
  */
 function resolveJobPrinter(job: {
   print_area_id?: string | null;
   printer_name?: string;
 }): string | null {
-  // 1. printer_name explícito no job — tem prioridade máxima.
-  // O portal grava aqui o resultado de modality_printer_overrides quando definido.
-  // Se este campo está preenchido, a decisão de impressora já foi tomada pelo portal:
-  // respeitar sem verificar device_area_mappings.
+  // 1. printer_name explícito no job — mas SOMENTE se for uma impressora Windows real.
+  // O portal pode gravar aqui um nome lógico (ex: "Caixa") que não corresponde a
+  // nenhuma impressora instalada. Nesse caso ignoramos e usamos o mapeamento local.
   if (job.printer_name) {
-    console.log(`[resolveJobPrinter] Usando printer_name do job (override/direto): ${job.printer_name}`);
-    return job.printer_name;
+    const isRealPrinter = cachedPrinters.some(
+      (p) => p.toLowerCase() === job.printer_name!.toLowerCase()
+    );
+    if (isRealPrinter) {
+      console.log(`[resolveJobPrinter] Usando printer_name do job (impressora real confirmada): ${job.printer_name}`);
+      return job.printer_name;
+    }
+    console.log(`[resolveJobPrinter] printer_name '${job.printer_name}' nao e impressora local — usando mapeamento de area`);
+    // Cai para o passo 2 (mapeamento local via print_area_id)
   }
 
-  // 2. Se job tem print_area_id mas sem printer_name, usa mapeamento local do device
+  // 2. Se job tem print_area_id, usa mapeamento local do device
   if (job.print_area_id) {
     const mappings = store.get("areaMappings");
     const mapping = mappings[job.print_area_id];
@@ -812,7 +822,7 @@ function resolveJobPrinter(job: {
     return null;
   }
 
-  // 3. Sem printer_name e sem print_area_id — não há como resolver
+  // 3. Sem printer_name válido e sem print_area_id — não há como resolver
   return null;
 }
 
