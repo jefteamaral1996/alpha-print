@@ -31,9 +31,12 @@ export async function listPrinters(): Promise<string[]> {
 
 async function listPrintersPS(): Promise<string[]> {
   return new Promise((resolve) => {
+    // Force UTF-8 output so printer names with special chars (ã, é, ç, etc.) are read correctly.
+    // Without this, Node.js reads PowerShell stdout in the system OEM code page (e.g. CP850),
+    // which corrupts non-ASCII chars — turning "SALÃO" into "SAL\uFFFDO" in the DB.
     exec(
-      `"${PS_PATH}" -NoProfile -Command "Get-Printer | Select-Object -ExpandProperty Name"`,
-      { timeout: 10000 },
+      `"${PS_PATH}" -NoProfile -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Printer | Select-Object -ExpandProperty Name"`,
+      { timeout: 10000, encoding: "utf8" },
       (error: Error | null, stdout: string) => {
         if (error) {
           console.error("[Printer] PowerShell Get-Printer error:", error.message);
@@ -55,9 +58,10 @@ async function listPrintersPS(): Promise<string[]> {
 
 async function listPrintersWMIC(): Promise<string[]> {
   return new Promise((resolve) => {
+    // Specify UTF-8 encoding so non-ASCII printer names (ã, é, ç…) are not corrupted.
     exec(
       "wmic printer get name",
-      { timeout: 10000 },
+      { timeout: 10000, encoding: "utf8" },
       (error: Error | null, stdout: string) => {
         if (error) {
           console.error("[Printer] WMIC error:", error.message);
@@ -82,9 +86,10 @@ async function listPrintersWMIC(): Promise<string[]> {
  */
 export async function getDefaultPrinter(): Promise<string> {
   return new Promise((resolve) => {
+    // Force UTF-8 so default printer names with accented chars are read correctly.
     exec(
-      `"${PS_PATH}" -NoProfile -Command "(Get-CimInstance -ClassName Win32_Printer | Where-Object {$_.Default -eq $true}).Name"`,
-      { timeout: 10000 },
+      `"${PS_PATH}" -NoProfile -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; (Get-CimInstance -ClassName Win32_Printer | Where-Object {$_.Default -eq $true}).Name"`,
+      { timeout: 10000, encoding: "utf8" },
       (error, stdout) => {
         if (error) {
           resolve("");
