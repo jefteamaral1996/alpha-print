@@ -42,3 +42,9 @@ nsis:
 # signAndEditExecutable REMOVIDO — precisa ser true (default) para embutir icone no exe via rcedit
 # Sem CSC_LINK/CSC_KEY_PASSWORD, o builder edita o exe (icone) mas nao tenta assinar
 # ICO com 4 tamanhos: 16, 32, 48, 256px
+
+publish:
+  provider: github
+  owner: jefteamaral
+  repo: alpha-print
+  releaseType: release
