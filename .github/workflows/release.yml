@@ -25,11 +25,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build Electron app
-        run: npx tsc && npx electron-builder --win --publish never
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Get version from package.json
         id: version
         shell: bash
@@ -38,7 +33,14 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Building version: $VERSION"
 
-      - name: Create GitHub Release
+      - name: Build and publish Electron app
+        # --publish always: electron-builder cria o release, faz upload do .exe E do latest.yml
+        # O latest.yml e obrigatorio para o electron-updater funcionar nos apps instalados
+        run: npx tsc && npx electron-builder --win --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update release description
         uses: softprops/action-gh-release@v2
         with:
           name: "Alpha Print v${{ steps.version.outputs.version }}"
@@ -51,17 +53,15 @@ jobs:
             > **Nota:** Na primeira instalacao, o Windows SmartScreen pode exibir um alerta. Clique em "Mais informacoes" e depois "Executar assim mesmo".
           draft: false
           prerelease: false
-          files: |
-            release/AlphaPrintSetup-${{ steps.version.outputs.version }}.exe
-          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Notify site to update download link
+      - name: Notify release success
         if: success()
         shell: bash
         run: |
-          echo "Release v${{ steps.version.outputs.version }} created successfully!"
+          echo "Release v${{ steps.version.outputs.version }} published successfully!"
           echo "Download URL: https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}/AlphaPrintSetup-${{ steps.version.outputs.version }}.exe"
           echo ""
-          echo "The portal fetches /releases/latest via GitHub API to resolve the versioned asset name dynamically."
+          echo "Auto-update: latest.yml foi gerado e enviado pelo electron-builder."
+          echo "Apps instalados vao detectar a nova versao automaticamente."
