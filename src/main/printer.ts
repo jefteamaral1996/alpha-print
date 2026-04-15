@@ -288,7 +288,14 @@ async function sendToPrinter(
     // Write the PowerShell script to a temp .ps1 file
     // (avoids complex escaping issues with inline commands)
     const script = buildRawPrintScript(printerName, tempFile);
-    writeFileSync(scriptFile, script, "utf-8");
+    // IMPORTANT: Write with UTF-8 BOM (EF BB BF) so PowerShell 5.1 reads the file
+    // as UTF-8 instead of the system default (CP1252/Windows-1252).
+    // Without BOM, PowerShell 5.1 uses the system code page and corrupts non-ASCII
+    // printer names (e.g. "SALÃO" becomes "SALÃƒO"), causing OpenPrinter to fail
+    // with Win32 error 1801 (ERROR_INVALID_PRINTER_NAME) even though the printer
+    // is installed and working. The BOM signals UTF-8 to PowerShell 5.x.
+    const BOM = Buffer.from([0xef, 0xbb, 0xbf]);
+    writeFileSync(scriptFile, Buffer.concat([BOM, Buffer.from(script, "utf-8")]));
 
     // Primary method: Win32 API WritePrinter via PowerShell script
     const cmd = `"${PS_PATH}" -NoProfile -ExecutionPolicy Bypass -File "${scriptFile}"`;
