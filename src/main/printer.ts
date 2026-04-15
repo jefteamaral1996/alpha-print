@@ -299,6 +299,8 @@ async function sendToPrinter(
       }
 
       console.error("[Printer] Win32 raw print failed:", error.message);
+      // Loga ate 500 chars do stderr real do PowerShell para debug (nao exibido ao usuario)
+      if (stderr) console.error("[Printer] PowerShell stderr:", stderr.substring(0, 500));
       console.log("[Printer] Trying shared printer fallback...");
 
       // Fallback: try via shared printer path (\\localhost\PRINTER)
@@ -314,9 +316,10 @@ async function sendToPrinter(
         cleanupTemp(scriptFile);
 
         if (err2) {
-          // Usa o stderr do erro primario (Win32) para extrair o codigo de erro
-          // e gerar mensagem humanizada — o dump tecnico NAO e repassado ao usuario
-          const rawStderr = error.message || err2.message || "";
+          // Usa stderr do PowerShell como fonte primaria para extrair o codigo Win32
+          // (stderr contem o stack trace real com "erro XXXX", ao contrario de error.message
+          //  que e a mensagem do Node.js: "Command failed: powershell.exe ...")
+          const rawStderr = stderr || error.message || err2.message || "";
           reject(new Error(humanizePrintError(rawStderr, printerName)));
         } else {
           resolve();

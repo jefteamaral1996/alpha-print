@@ -64,17 +64,45 @@
   ; Mata o processo caso esteja rodando
   nsExec::ExecToLog "taskkill /f /im $\"Alpha Print.exe$\""
 
-  ; Mostra no log o que esta acontecendo
+  ; Aguarda o processo fechar completamente
+  Sleep 1000
+
+  ; =============================================================
+  ; LIMPEZA COMPLETA — Remove TODOS os dados do Alpha Print
+  ; =============================================================
   DetailPrint ""
   DetailPrint "====================================="
   DetailPrint "  Alpha Print - Desinstalacao"
   DetailPrint "====================================="
   DetailPrint ""
-  DetailPrint "Removendo arquivos do Alpha Print..."
+  DetailPrint "Removendo arquivos e dados do Alpha Print..."
+
+  ; 1. AppData\Roaming\Alpha Print (electron-store: storeId, deviceId, configuracoes)
+  DetailPrint "Removendo dados de configuracao (AppData\Roaming)..."
+  RMDir /r "$APPDATA\Alpha Print"
+
+  ; 2. AppData\Local\alpha-print (cache Electron: GPU cache, logs, Code Cache)
+  DetailPrint "Removendo cache do aplicativo (AppData\Local)..."
+  RMDir /r "$LOCALAPPDATA\alpha-print"
+
+  ; 3. Arquivos temporarios de impressao (*.bin e *.ps1 criados pelo printer.ts)
+  DetailPrint "Removendo arquivos temporarios de impressao..."
+  Delete "$TEMP\alpha-print-*.bin"
+  Delete "$TEMP\alpha-print-*.ps1"
+
+  ; 4. Entradas de registro criadas pelo electron-store e pelo Electron
+  DetailPrint "Removendo entradas do registro do Windows..."
+  DeleteRegKey HKCU "Software\Alpha Print"
+  DeleteRegKey HKCU "Software\alpha-print"
+  ; Remove entrada de auto-start caso o app tenha criado
+  DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Alpha Print"
+
+  DetailPrint ""
+  DetailPrint "Limpeza concluida. Nenhum dado do Alpha Print permanece no computador."
 !macroend
 
 ; --- Pagina final do desinstalador (apos MUI_UNPAGE_INSTFILES) ---
 !macro customUninstallPage
   !define MUI_FINISHPAGE_TITLE "Desinstalacao concluida!"
-  !define MUI_FINISHPAGE_TEXT "O Alpha Print foi removido do seu computador.$\r$\n$\r$\nSe quiser reinstalar, baixe novamente em portal.alphacardapio.com.$\r$\n$\r$\nClique em Concluir para fechar."
+  !define MUI_FINISHPAGE_TEXT "O Alpha Print foi completamente removido do seu computador.$\r$\n$\r$\nTodos os dados, configuracoes e arquivos temporarios foram apagados.$\r$\n$\r$\nSe quiser reinstalar, baixe novamente em portal.alphacardapio.com.$\r$\n$\r$\nClique em Concluir para fechar."
 !macroend
