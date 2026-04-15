@@ -66,6 +66,10 @@
             <span id="server-text" class="status-value">Desconectado</span>
           </div>
         </div>
+        <!-- Mecanismo 4: Botao manual de reconexao — aparece so quando desconectado -->
+        <div id="reconnect-row" class="reconnect-row hidden">
+          <button id="reconnect-btn" class="btn-reconnect" onclick="doReconnect()">Reconectar agora</button>
+        </div>
         <div id="last-print" class="last-print hidden">
           <span class="label">Ultima impressao:</span>
           <span id="last-print-time" class="value"></span>

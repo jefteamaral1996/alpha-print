@@ -21,6 +21,7 @@ import {
   onPrintersChange,
   onConnectionStatusChange,
   getConnectionStatus,
+  forceReconnect,
 } from "./print-listener";
 import { createTray, updateTrayStatus, updateLastPrintTime, destroyTray } from "./tray";
 
@@ -190,6 +191,16 @@ function showWindow(): void {
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
+
+  // Mecanismo 5: Reconectar quando janela ganha foco (usuário abre o app
+  // após o PC ficar em sleep ou a rede cair e voltar enquanto estava minimizado)
+  mainWindow.on("focus", () => {
+    const status = getConnectionStatus();
+    if (status.server !== "connected") {
+      console.log("[App] Janela ganhou foco com servidor desconectado — forçando reconexão");
+      forceReconnect();
+    }
+  });
 }
 
 function quitApp(): void {
@@ -341,4 +352,10 @@ ipcMain.handle("app:info", () => {
     deviceId: store.get("deviceId"),
     deviceName: store.get("deviceName"),
   };
+});
+
+// Mecanismo 4: Botão manual "Reconectar agora" da UI
+ipcMain.handle("connection:reconnect", () => {
+  forceReconnect();
+  return { success: true };
 });

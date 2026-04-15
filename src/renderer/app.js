@@ -27,6 +27,8 @@ const internetDot = document.getElementById("internet-dot");
 const internetText = document.getElementById("internet-text");
 const serverDot = document.getElementById("server-dot");
 const serverText = document.getElementById("server-text");
+const reconnectRow = document.getElementById("reconnect-row");
+const reconnectBtn = document.getElementById("reconnect-btn");
 const recentJobsEl = document.getElementById("recent-jobs");
 const toastContainer = document.getElementById("toast-container");
 
@@ -114,6 +116,42 @@ function updateConnectionStatus(status) {
         break;
     }
   }
+
+  // Mecanismo 4: Mostra/esconde botao de reconexao manual
+  if (reconnectRow) {
+    if (status.server === "disconnected" || status.server === "reconnecting") {
+      reconnectRow.classList.remove("hidden");
+    } else {
+      reconnectRow.classList.add("hidden");
+      // Restaura o botao caso estivesse em estado de "aguardando..."
+      if (reconnectBtn) {
+        reconnectBtn.disabled = false;
+        reconnectBtn.textContent = "Reconectar agora";
+      }
+    }
+  }
+}
+
+// ── Reconexao Manual (Mecanismo 4) ──
+
+async function doReconnect() {
+  if (!reconnectBtn) return;
+  reconnectBtn.disabled = true;
+  reconnectBtn.textContent = "Reconectando...";
+
+  try {
+    await api.reconnectNow();
+  } catch {
+    // Ignora — o main process ja trata o erro
+  }
+
+  // Restaura o botao apos 3s (o status real chegara via onConnectionStatusChanged)
+  setTimeout(() => {
+    if (reconnectBtn && reconnectBtn.disabled) {
+      reconnectBtn.disabled = false;
+      reconnectBtn.textContent = "Reconectar agora";
+    }
+  }, 3000);
 }
 
 // ── Login ──
@@ -414,6 +452,7 @@ window.refreshPrinters = refreshPrinters;
 window.testPrinter = testPrinter;
 window.doLogout = doLogout;
 window.dismissFailureAlert = dismissFailureAlert;
+window.doReconnect = doReconnect;
 
 // ── Start ──
 init();

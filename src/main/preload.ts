@@ -28,6 +28,9 @@ contextBridge.exposeInMainWorld("alphaPrint", {
   // Connection status
   getConnectionStatus: () => ipcRenderer.invoke("connection:status"),
 
+  // Mecanismo 4: Reconexão manual via botão na UI
+  reconnectNow: () => ipcRenderer.invoke("connection:reconnect"),
+
   // Recent print jobs (last 3)
   getRecentJobs: () => ipcRenderer.invoke("jobs:recent"),
 

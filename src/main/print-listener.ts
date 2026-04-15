@@ -47,7 +47,12 @@ let connectionStatusCallback: ConnectionStatusCallback | null = null;
 let reconnectTimer: NodeJS.Timeout | null = null;
 let printerSyncTimer: NodeJS.Timeout | null = null;
 let internetCheckTimer: NodeJS.Timeout | null = null;
+let heartbeatTimer: NodeJS.Timeout | null = null;
 let isActive = false;
+let currentStoreId: string | null = null;
+
+// Timestamps to detect a dead connection via heartbeat
+let lastSuccessfulEventAt: number = Date.now();
 
 // Connection status tracking
 let currentInternetStatus: "online" | "offline" | "checking" = "checking";
@@ -82,9 +87,17 @@ export function startListening(onEvent: PrintCallback): void {
 
   callback = onEvent;
   isActive = true;
+  currentStoreId = storeId;
+  lastSuccessfulEventAt = Date.now();
 
   // Start internet connectivity monitoring
   startInternetCheck();
+
+  // Mecanismo 3: Heartbeat — detecta conexão morta antes de o Supabase notar
+  startHeartbeat();
+
+  // Mecanismo 2: Reconectar quando rede voltar (evento 'online' do Node/Electron)
+  process.on("online", handleNetworkOnline);
 
   setupChannels(storeId);
 
@@ -99,6 +112,73 @@ export function startListening(onEvent: PrintCallback): void {
   processPendingJobs();
 
   console.log("[PrintListener] Listening for print jobs on store:", storeId);
+}
+
+/**
+ * Mecanismo 2: Handler para o evento 'online' do processo Node/Electron.
+ * Reconecta imediatamente quando a rede é restaurada.
+ */
+function handleNetworkOnline(): void {
+  if (!isActive || !currentStoreId) return;
+  console.log("[PrintListener] Network 'online' event — forcing reconnect");
+  currentInternetStatus = "online";
+  emitConnectionStatus();
+  // Se já estava conectado, não precisa reconectar
+  if (currentServerStatus === "connected") return;
+  // Cancela qualquer timer de reconexão pendente e reconecta imediatamente
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  reconnectAttempts = 0;
+  scheduleReconnect(currentStoreId);
+}
+
+/**
+ * Mecanismo 3: Heartbeat — verifica se a conexão está viva.
+ * Se o canal está marcado como "connected" mas nenhum evento chegou em
+ * HEARTBEAT_DEAD_MS, considera a conexão morta e força reconexão.
+ */
+const HEARTBEAT_INTERVAL_MS = 30_000;  // Verifica a cada 30s
+const HEARTBEAT_DEAD_MS = 90_000;      // Morto se sem eventos por 90s
+
+function startHeartbeat(): void {
+  if (heartbeatTimer) clearInterval(heartbeatTimer);
+  heartbeatTimer = setInterval(() => {
+    if (!isActive || !currentStoreId) return;
+    if (currentServerStatus !== "connected") return; // Já reconectando — não interfere
+
+    const silentMs = Date.now() - lastSuccessfulEventAt;
+    if (silentMs > HEARTBEAT_DEAD_MS) {
+      console.warn(`[Heartbeat] Conexão silenciosa por ${Math.round(silentMs / 1000)}s — forçando reconexão`);
+      currentServerStatus = "reconnecting";
+      currentServerDetail = "Verificando conexão...";
+      emitConnectionStatus();
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      reconnectAttempts = 0;
+      scheduleReconnect(currentStoreId);
+    }
+  }, HEARTBEAT_INTERVAL_MS);
+}
+
+/**
+ * Mecanismo 4: Reconexão manual — exposta via IPC para o botão da UI.
+ */
+export function forceReconnect(): void {
+  if (!isActive || !currentStoreId) return;
+  console.log("[PrintListener] Reconexão manual solicitada");
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  reconnectAttempts = 0;
+  currentServerStatus = "reconnecting";
+  currentServerDetail = "Reconectando...";
+  emitConnectionStatus();
+  scheduleReconnect(currentStoreId);
 }
 
 /**
@@ -123,6 +203,7 @@ function setupChannels(storeId: string): void {
         printers: cachedPrinters,
         online_at: new Date().toISOString(),
       });
+      lastSuccessfulEventAt = Date.now(); // Mecanismo 3: heartbeat
       console.log("[Presence] Tracking started with", cachedPrinters.length, "printers");
     } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
       console.error("[Presence] Channel error/timeout, scheduling reconnect");
@@ -145,6 +226,7 @@ function setupChannels(storeId: string): void {
         filter: `store_id=eq.${storeId}`,
       },
       (payload) => {
+        lastSuccessfulEventAt = Date.now(); // Mecanismo 3: heartbeat — canal está vivo
         const job = payload.new as {
           id: string;
           status: string;
@@ -163,6 +245,8 @@ function setupChannels(storeId: string): void {
         console.log("[PrintListener] Realtime channel connected");
         currentServerStatus = "connected";
         currentServerDetail = "Recebendo pedidos";
+        lastSuccessfulEventAt = Date.now(); // Mecanismo 3: marca heartbeat
+        reconnectAttempts = 0;             // Reset backoff ao reconectar com sucesso
         emitConnectionStatus();
         processPendingJobs();
       } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
@@ -217,24 +301,36 @@ function setupChannels(storeId: string): void {
 }
 
 /**
- * Schedule a reconnection attempt after a delay.
+ * Mecanismo 1: Reconexão com backoff exponencial.
+ * BUG CORRIGIDO: o guard anterior `if (reconnectTimer) return` causava loop
+ * infinito — se o timer era criado mas nunca disparava (ex: PC em sleep),
+ * nenhuma nova reconexão era possível sem reiniciar o app.
+ * Agora: cancela o timer pendente e agenda um novo, garantindo que o
+ * backoff nunca "trava".
  */
 let reconnectAttempts = 0;
 
 function scheduleReconnect(storeId: string): void {
   if (!isActive) return;
-  if (reconnectTimer) return;
 
-  const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
-  reconnectAttempts++;
+  // Mecanismo 1 (FIX): Cancela timer pendente em vez de retornar — evita
+  // o estado "travado" onde reconnectTimer existe mas nunca vai disparar.
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
 
-  console.log(`[PrintListener] Reconnecting in ${delay / 1000}s (attempt ${reconnectAttempts})`);
+  // Backoff exponencial: 1s, 2s, 4s, 8s, 16s... máximo 30s
+  const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30_000);
+  reconnectAttempts = Math.min(reconnectAttempts + 1, 10); // Cap para evitar overflow
+
+  console.log(`[PrintListener] Reconectando em ${delay / 1000}s (tentativa ${reconnectAttempts})`);
 
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
     if (!isActive) return;
 
-    console.log("[PrintListener] Attempting reconnection...");
+    console.log("[PrintListener] Executando reconexão...");
 
     const supabase = getSupabase();
     if (channel) {
@@ -255,7 +351,6 @@ function scheduleReconnect(storeId: string): void {
     }
 
     setupChannels(storeId);
-    reconnectAttempts = Math.max(0, reconnectAttempts - 1);
   }, delay);
 }
 
@@ -264,6 +359,9 @@ function scheduleReconnect(storeId: string): void {
  */
 export function stopListening(): void {
   isActive = false;
+
+  // Mecanismo 2: Remove listener de rede
+  process.off("online", handleNetworkOnline);
 
   if (reconnectTimer) {
     clearTimeout(reconnectTimer);
@@ -278,6 +376,12 @@ export function stopListening(): void {
   if (internetCheckTimer) {
     clearInterval(internetCheckTimer);
     internetCheckTimer = null;
+  }
+
+  // Mecanismo 3: Para o heartbeat
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
   }
 
   currentServerStatus = "disconnected";
