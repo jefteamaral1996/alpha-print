@@ -48,6 +48,7 @@ let reconnectTimer: NodeJS.Timeout | null = null;
 let printerSyncTimer: NodeJS.Timeout | null = null;
 let internetCheckTimer: NodeJS.Timeout | null = null;
 let heartbeatTimer: NodeJS.Timeout | null = null;
+let pendingJobsPollingTimer: NodeJS.Timeout | null = null;
 let isActive = false;
 let currentStoreId: string | null = null;
 
@@ -108,8 +109,14 @@ export function startListening(onEvent: PrintCallback): void {
   // Load areas from portal, then load mappings (mappings need areas for names)
   loadAreasFromPortal().then(() => loadMappingsFromDb());
 
-  // Process any pending jobs
+  // Process any pending jobs immediately
   processPendingJobs();
+
+  // Mecanismo 4: Poll periódico de jobs pendentes a cada 2 min.
+  // Garante recuperação de jobs que chegaram durante queda silenciosa do canal
+  // Realtime (postgres_changes pode morrer sem emitir CHANNEL_ERROR em alguns
+  // cenários de rede instável, deixando jobs com status="pending" para sempre).
+  pendingJobsPollingTimer = setInterval(processPendingJobs, 120_000);
 
   console.log("[PrintListener] Listening for print jobs on store:", storeId);
 }
@@ -382,6 +389,12 @@ export function stopListening(): void {
   if (heartbeatTimer) {
     clearInterval(heartbeatTimer);
     heartbeatTimer = null;
+  }
+
+  // Mecanismo 4: Para o poll de jobs pendentes
+  if (pendingJobsPollingTimer) {
+    clearInterval(pendingJobsPollingTimer);
+    pendingJobsPollingTimer = null;
   }
 
   currentServerStatus = "disconnected";
@@ -814,8 +827,24 @@ function resolveJobPrinter(job: {
       console.log(`[resolveJobPrinter] Impressora local confirmada: ${job.printer_name}`);
       return job.printer_name;
     }
-    // printer_name não é uma impressora deste PC — job é para outro PC, pular
-    console.log(`[resolveJobPrinter] '${job.printer_name}' nao e impressora deste PC — pulando`);
+    // printer_name não é impressora deste PC. Pode ser nome lógico (ex: "Caixa")
+    // gravado via device_area_mappings configurado incorretamente no portal.
+    // Antes de descartar, tenta o fallback via print_area_id + mapeamento local.
+    console.log(`[resolveJobPrinter] '${job.printer_name}' nao e impressora deste PC — tentando fallback via area`);
+    if (job.print_area_id) {
+      const mappings = store.get("areaMappings");
+      const mapping = mappings[job.print_area_id];
+      if (mapping && mapping.printerNames && mapping.printerNames.length > 0) {
+        const localPrinter = mapping.printerNames.find((name: string) =>
+          cachedPrinters.some((p) => p.toLowerCase() === name.toLowerCase())
+        );
+        if (localPrinter) {
+          console.log(`[resolveJobPrinter] Fallback area mapping (printer_name era nome lógico): ${localPrinter}`);
+          return localPrinter;
+        }
+      }
+    }
+    // Nenhum mapeamento local para esta área neste device — job é para outro PC
     return null;
   }
 
