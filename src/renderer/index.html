@@ -101,6 +101,29 @@
         <span>As configuracoes de impressoras e areas sao feitas no <strong>portal</strong> (Configuracoes &gt; Impressao).</span>
       </div>
 
+      <!-- Updates -->
+      <div class="section">
+        <div class="section-header">
+          <h3>Atualizacoes</h3>
+        </div>
+        <div id="update-section" class="update-section">
+          <div class="update-version-row">
+            <span class="label">Versao instalada:</span>
+            <span id="update-current-version" class="value">...</span>
+          </div>
+          <div id="update-status-row" class="update-status-row hidden">
+            <div id="update-status-dot" class="update-dot"></div>
+            <span id="update-status-text" class="update-status-text"></span>
+          </div>
+          <div id="update-progress-bar-wrap" class="update-progress-bar-wrap hidden">
+            <div id="update-progress-bar" class="update-progress-bar" style="width: 0%"></div>
+          </div>
+          <button id="check-update-btn" class="btn-secondary" onclick="doCheckUpdates()">
+            Verificar atualizacoes
+          </button>
+        </div>
+      </div>
+
       <!-- Info -->
       <div class="section">
         <h3>Informacoes</h3>

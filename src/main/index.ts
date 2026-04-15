@@ -69,7 +69,7 @@ function setupAutoStart(): void {
 
 app.on("ready", async () => {
   setupAutoStart();
-  initAutoUpdater();
+  initAutoUpdater(() => mainWindow);
   createTray(showWindow, quitApp);
 
   if (isLoggedIn()) {

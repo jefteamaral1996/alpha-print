@@ -31,6 +31,13 @@ const reconnectRow = document.getElementById("reconnect-row");
 const reconnectBtn = document.getElementById("reconnect-btn");
 const recentJobsEl = document.getElementById("recent-jobs");
 const toastContainer = document.getElementById("toast-container");
+const checkUpdateBtn = document.getElementById("check-update-btn");
+const updateCurrentVersion = document.getElementById("update-current-version");
+const updateStatusRow = document.getElementById("update-status-row");
+const updateStatusDot = document.getElementById("update-status-dot");
+const updateStatusText = document.getElementById("update-status-text");
+const updateProgressBarWrap = document.getElementById("update-progress-bar-wrap");
+const updateProgressBar = document.getElementById("update-progress-bar");
 
 let printers = [];
 let deviceNameTimer = null;
@@ -71,6 +78,11 @@ async function init() {
   // Listen for connection status changes from main process
   api.onConnectionStatusChanged((status) => {
     updateConnectionStatus(status);
+  });
+
+  // Updater: receber status em tempo real
+  api.onUpdaterStatus((payload) => {
+    updateUpdaterStatus(payload);
   });
 }
 
@@ -205,9 +217,14 @@ async function showMainScreen(status) {
     ? `${status.storeName} — ${status.email}`
     : status.email;
 
-  // Load device name
+  // Load device name and current version
   const appInfo = await api.getAppInfo();
   deviceNameInput.value = appInfo.deviceName || "";
+
+  // Mostrar versao atual na secao de atualizacoes
+  if (updateCurrentVersion) {
+    updateCurrentVersion.textContent = `v${appInfo.version}`;
+  }
 
   // Set up device name auto-save
   deviceNameInput.addEventListener("input", () => {
@@ -423,6 +440,92 @@ function dismissFailureAlert() {
   });
 }
 
+// ── Atualizacoes ──
+
+function updateUpdaterStatus(payload) {
+  if (!updateStatusRow) return;
+
+  updateStatusDot.className = "update-dot";
+  if (updateProgressBarWrap) updateProgressBarWrap.classList.add("hidden");
+
+  switch (payload.state) {
+    case "checking":
+      updateStatusRow.classList.remove("hidden");
+      updateStatusDot.classList.add("checking");
+      updateStatusText.textContent = "Verificando atualizacoes...";
+      if (checkUpdateBtn) {
+        checkUpdateBtn.disabled = true;
+        checkUpdateBtn.textContent = "Verificando...";
+      }
+      break;
+
+    case "available":
+      updateStatusRow.classList.remove("hidden");
+      updateStatusDot.classList.add("yellow");
+      updateStatusText.textContent = `Nova versao disponivel: v${payload.version || ""}`;
+      if (checkUpdateBtn) {
+        checkUpdateBtn.disabled = true;
+        checkUpdateBtn.textContent = "Baixando...";
+      }
+      break;
+
+    case "not-available":
+      updateStatusRow.classList.remove("hidden");
+      updateStatusDot.classList.add("green");
+      updateStatusText.textContent = "Ja esta na versao mais recente.";
+      if (checkUpdateBtn) {
+        checkUpdateBtn.disabled = false;
+        checkUpdateBtn.textContent = "Verificar atualizacoes";
+      }
+      // Oculta o status apos 4s
+      setTimeout(() => {
+        if (updateStatusRow) updateStatusRow.classList.add("hidden");
+      }, 4000);
+      break;
+
+    case "downloading":
+      updateStatusRow.classList.remove("hidden");
+      updateStatusDot.classList.add("yellow");
+      updateStatusText.textContent = `Baixando atualizacao... ${payload.percent || 0}%`;
+      if (updateProgressBarWrap) updateProgressBarWrap.classList.remove("hidden");
+      if (updateProgressBar) updateProgressBar.style.width = `${payload.percent || 0}%`;
+      if (checkUpdateBtn) {
+        checkUpdateBtn.disabled = true;
+        checkUpdateBtn.textContent = `Baixando ${payload.percent || 0}%...`;
+      }
+      break;
+
+    case "downloaded":
+      updateStatusRow.classList.remove("hidden");
+      updateStatusDot.classList.add("green");
+      updateStatusText.textContent = `v${payload.version || ""} pronta para instalar. Reinicie o app.`;
+      if (checkUpdateBtn) {
+        checkUpdateBtn.disabled = true;
+        checkUpdateBtn.textContent = "Reiniciando ao fechar";
+      }
+      break;
+
+    case "error":
+      updateStatusRow.classList.remove("hidden");
+      updateStatusDot.classList.add("red");
+      updateStatusText.textContent = "Erro ao verificar atualizacao.";
+      if (checkUpdateBtn) {
+        checkUpdateBtn.disabled = false;
+        checkUpdateBtn.textContent = "Tentar novamente";
+      }
+      break;
+  }
+}
+
+async function doCheckUpdates() {
+  if (!checkUpdateBtn) return;
+  try {
+    await api.checkForUpdates();
+  } catch {
+    // O status de erro chegara via onUpdaterStatus
+  }
+}
+
 // ── Logout ──
 
 async function doLogout() {
@@ -453,6 +556,7 @@ window.testPrinter = testPrinter;
 window.doLogout = doLogout;
 window.dismissFailureAlert = dismissFailureAlert;
 window.doReconnect = doReconnect;
+window.doCheckUpdates = doCheckUpdates;
 
 // ── Start ──
 init();

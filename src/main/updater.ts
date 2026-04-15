@@ -1,30 +1,58 @@
 // ============================================================
 // updater.ts — Auto-Update via GitHub Releases
 // electron-updater: verifica versao ao iniciar, baixa em
-// background silenciosamente, pergunta ao usuario ao concluir
+// background silenciosamente, pergunta ao usuario ao concluir.
+// Tambem expoe IPC para trigger manual e push de status ao renderer.
 // ============================================================
 
 import { autoUpdater } from "electron-updater";
-import { dialog, BrowserWindow } from "electron";
+import { dialog, BrowserWindow, ipcMain } from "electron";
 
-export function initAutoUpdater(): void {
+export interface UpdaterStatusPayload {
+  state:
+    | "checking"
+    | "available"
+    | "not-available"
+    | "downloading"
+    | "downloaded"
+    | "error";
+  version?: string;
+  percent?: number;
+  error?: string;
+}
+
+function sendStatus(
+  getWindow: () => BrowserWindow | null,
+  payload: UpdaterStatusPayload
+): void {
+  const win = getWindow();
+  win?.webContents.send("updater:status", payload);
+}
+
+export function initAutoUpdater(
+  getWindow: () => BrowserWindow | null
+): void {
   // Silencioso durante download — nao incomoda o usuario
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
 
-  // Log de status (visivel no console do processo main)
+  // ── Eventos com push ao renderer ─────────────────────────
+
   autoUpdater.on("checking-for-update", () => {
     console.log("[Updater] Verificando atualizacoes...");
+    sendStatus(getWindow, { state: "checking" });
   });
 
   autoUpdater.on("update-available", (info) => {
     console.log(
       `[Updater] Nova versao disponivel: ${info.version} — baixando em background...`
     );
+    sendStatus(getWindow, { state: "available", version: info.version });
   });
 
   autoUpdater.on("update-not-available", () => {
     console.log("[Updater] App esta atualizado.");
+    sendStatus(getWindow, { state: "not-available" });
   });
 
   autoUpdater.on("error", (err) => {
@@ -32,8 +60,7 @@ export function initAutoUpdater(): void {
       "[Updater] Erro ao verificar/baixar atualizacao:",
       err.message
     );
-    // Falha silenciosa — nao exibe dialog de erro pro usuario
-    // O app continua funcionando normalmente
+    sendStatus(getWindow, { state: "error", error: err.message });
   });
 
   autoUpdater.on("download-progress", (progress) => {
@@ -41,16 +68,20 @@ export function initAutoUpdater(): void {
     console.log(
       `[Updater] Download: ${percent}% (${Math.round(progress.transferred / 1024)}KB / ${Math.round(progress.total / 1024)}KB)`
     );
+    sendStatus(getWindow, { state: "downloading", percent });
   });
 
   autoUpdater.on("update-downloaded", (info) => {
     console.log(
       `[Updater] Versao ${info.version} baixada. Perguntando ao usuario...`
     );
+    sendStatus(getWindow, { state: "downloaded", version: info.version });
 
     // Usa a janela focada ou a primeira disponivel
     const win =
-      BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+      getWindow() ||
+      BrowserWindow.getFocusedWindow() ||
+      BrowserWindow.getAllWindows()[0];
 
     const dialogOptions: Electron.MessageBoxOptions = {
       type: "info",
@@ -73,13 +104,11 @@ export function initAutoUpdater(): void {
           console.log(
             "[Updater] Usuario escolheu reiniciar agora — instalando..."
           );
-          // false = nao mostrar splash do instalador, true = reiniciar apos instalar
           autoUpdater.quitAndInstall(false, true);
         } else {
           console.log(
             "[Updater] Usuario escolheu instalar depois — sera instalado ao fechar o app."
           );
-          // autoInstallOnAppQuit: true garante instalacao ao fechar
         }
       })
       .catch((err) => {
@@ -87,7 +116,19 @@ export function initAutoUpdater(): void {
       });
   });
 
-  // Verificar com delay de 3s para nao atrasar o boot do app
+  // ── IPC: trigger manual pelo renderer ────────────────────
+
+  ipcMain.handle("updater:checkNow", () => {
+    console.log("[Updater] Verificacao manual solicitada pelo usuario.");
+    autoUpdater.checkForUpdates().catch((err) => {
+      console.error("[Updater] checkForUpdates manual falhou:", err.message);
+      sendStatus(getWindow, { state: "error", error: err.message });
+    });
+    return { triggered: true };
+  });
+
+  // ── Check automatico ao iniciar (delay 3s) ───────────────
+
   setTimeout(() => {
     autoUpdater.checkForUpdates().catch((err) => {
       console.error("[Updater] checkForUpdates falhou:", err.message);

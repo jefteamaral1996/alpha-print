@@ -53,4 +53,19 @@ contextBridge.exposeInMainWorld("alphaPrint", {
   onPrintFailure: (callback: (data: any) => void) => {
     ipcRenderer.on("print:failure", (_event, data) => callback(data));
   },
+
+  // Updater: trigger manual de verificacao
+  checkForUpdates: () => ipcRenderer.invoke("updater:checkNow"),
+
+  // Updater: receber status em tempo real do main process
+  onUpdaterStatus: (
+    callback: (payload: {
+      state: string;
+      version?: string;
+      percent?: number;
+      error?: string;
+    }) => void
+  ) => {
+    ipcRenderer.on("updater:status", (_event, payload) => callback(payload));
+  },
 });
