@@ -9,7 +9,10 @@ import { hostname } from "os";
 
 export interface AreaMapping {
   printAreaId: string;
-  printerName: string;
+  /** @deprecated Use printerNames (array). Mantido para compatibilidade com dados antigos no store. */
+  printerName?: string;
+  /** Lista de impressoras locais mapeadas para esta área neste device. */
+  printerNames?: string[];
   areaName: string;
   areaType: string;
   enabled: boolean;

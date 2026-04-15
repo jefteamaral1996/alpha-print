@@ -660,17 +660,22 @@ async function loadMappingsFromDb(): Promise<void> {
     }
 
     if (data) {
+      // areaMappings: Record<print_area_id, { printerNames: string[], ... }>
+      // Agora guarda ARRAY de impressoras por área (antes sobrescrevia com a última)
       const mappings: Record<string, any> = {};
       for (const row of data as any[]) {
-        // Find area info from cached areas
+        if (!row.enabled || !row.printer_name) continue;
         const area = cachedAreas.find(a => a.id === row.print_area_id);
-        mappings[row.print_area_id] = {
-          printAreaId: row.print_area_id,
-          printerName: row.printer_name,
-          areaName: area?.name || "",
-          areaType: area?.area_type || "",
-          enabled: row.enabled,
-        };
+        if (!mappings[row.print_area_id]) {
+          mappings[row.print_area_id] = {
+            printAreaId: row.print_area_id,
+            printerNames: [],
+            areaName: area?.name || "",
+            areaType: area?.area_type || "",
+            enabled: true,
+          };
+        }
+        mappings[row.print_area_id].printerNames.push(row.printer_name);
       }
       store.set("areaMappings", mappings);
       console.log(`[PrintListener] Loaded ${Object.keys(mappings).length} area mappings from DB`);
@@ -795,34 +800,43 @@ function resolveJobPrinter(job: {
   print_area_id?: string | null;
   printer_name?: string;
 }): string | null {
-  // 1. printer_name explícito no job — mas SOMENTE se for uma impressora Windows real.
-  // O portal pode gravar aqui um nome lógico (ex: "Caixa") que não corresponde a
-  // nenhuma impressora instalada. Nesse caso ignoramos e usamos o mapeamento local.
+  // LÓGICA CORRIGIDA:
+  // O portal sempre grava printer_name = nome real da impressora Windows (ex: "IMPRESSORA DO SALÃO").
+  // Cada job vai para UMA impressora específica.
+  // Este PC só deve imprimir se printer_name for uma impressora instalada NESTE PC.
+  // Se não for local → retorna null (pula — é job para outro PC).
+
   if (job.printer_name) {
-    const isRealPrinter = cachedPrinters.some(
+    const isLocalPrinter = cachedPrinters.some(
       (p) => p.toLowerCase() === job.printer_name!.toLowerCase()
     );
-    if (isRealPrinter) {
-      console.log(`[resolveJobPrinter] Usando printer_name do job (impressora real confirmada): ${job.printer_name}`);
+    if (isLocalPrinter) {
+      console.log(`[resolveJobPrinter] Impressora local confirmada: ${job.printer_name}`);
       return job.printer_name;
     }
-    console.log(`[resolveJobPrinter] printer_name '${job.printer_name}' nao e impressora local — usando mapeamento de area`);
-    // Cai para o passo 2 (mapeamento local via print_area_id)
-  }
-
-  // 2. Se job tem print_area_id, usa mapeamento local do device
-  if (job.print_area_id) {
-    const mappings = store.get("areaMappings");
-    const mapping = mappings[job.print_area_id];
-    if (mapping && mapping.enabled && mapping.printerName) {
-      console.log(`[resolveJobPrinter] Usando device_area_mapping para área ${job.print_area_id}: ${mapping.printerName}`);
-      return mapping.printerName;
-    }
-    // Sem mapeamento local para esta área neste device — outro device pode imprimir
+    // printer_name não é uma impressora deste PC — job é para outro PC, pular
+    console.log(`[resolveJobPrinter] '${job.printer_name}' nao e impressora deste PC — pulando`);
     return null;
   }
 
-  // 3. Sem printer_name válido e sem print_area_id — não há como resolver
+  // Sem printer_name: fallback legado via print_area_id + mapeamento local
+  // (suporte a jobs antigos gravados antes do forcePrinterName)
+  if (job.print_area_id) {
+    const mappings = store.get("areaMappings");
+    const mapping = mappings[job.print_area_id];
+    if (mapping && mapping.printerNames && mapping.printerNames.length > 0) {
+      // Usa a primeira impressora local mapeada para esta área
+      const localPrinter = mapping.printerNames.find((name: string) =>
+        cachedPrinters.some((p) => p.toLowerCase() === name.toLowerCase())
+      );
+      if (localPrinter) {
+        console.log(`[resolveJobPrinter] Fallback area mapping: ${localPrinter}`);
+        return localPrinter;
+      }
+    }
+    return null;
+  }
+
   return null;
 }
 
