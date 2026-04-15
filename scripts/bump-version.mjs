@@ -5,10 +5,15 @@
 // Uso: node scripts/bump-version.mjs [patch|minor|major]
 // Padrao: patch
 //
+// Regra de auto-promocao de versao (CEO 2026-04-15):
+//   - patch + 1 >= 10  →  sobe minor automaticamente (x.y.10 → x.y+1.0)
+//   - minor + 1 >= 10  →  sobe major automaticamente (x.10.z → x+1.0.0)
+//   Exemplos: v1.0.9+patch=v1.0.10  |  v1.0.10+patch=v1.1.0  |  v1.9.10+patch=v2.0.0
+//
 // O que este script faz:
 //   1. Valida que voce esta no branch "main" e sem mudancas pendentes
 //   2. Le a versao atual do package.json
-//   3. Calcula a nova versao (patch/minor/major)
+//   3. Calcula a nova versao (patch/minor/major) com regra de auto-promocao
 //   4. Atualiza o package.json
 //   5. Commita a mudanca de versao
 //   6. Cria tag git (ex: v1.0.7)
@@ -67,12 +72,39 @@ if (!oldVersion || !/^\d+\.\d+\.\d+$/.test(oldVersion)) {
 }
 
 // --- Calcular nova versao ---
+//
+// Regra de auto-promocao (CEO 2026-04-15):
+//   patch >= 10  →  o proximo bump de patch vira bump de minor  (x.y.10 + patch = x.y+1.0)
+//   minor >= 10  →  o proximo bump de minor vira bump de major  (x.10.y + minor = x+1.0.0)
+//
+// Exemplos:
+//   v1.0.9  + patch → v1.0.10   (normal)
+//   v1.0.10 + patch → v1.1.0    (patch saturado, sobe minor)
+//   v1.9.10 + patch → v2.0.0    (patch saturado, minor saturado, sobe major)
+//   v1.9.3  + minor → v1.10.0   (normal)
+//   v1.10.0 + minor → v2.0.0    (minor saturado, sobe major)
 
 const [maj, min, pat] = oldVersion.split('.').map(Number);
 let newVersion;
-if (bumpType === 'major') newVersion = `${maj + 1}.0.0`;
-else if (bumpType === 'minor') newVersion = `${maj}.${min + 1}.0`;
-else newVersion = `${maj}.${min}.${pat + 1}`;
+
+if (bumpType === 'major') {
+  newVersion = `${maj + 1}.0.0`;
+} else if (bumpType === 'minor') {
+  // minor saturado (>= 10) → sobe major
+  if (min >= 10) newVersion = `${maj + 1}.0.0`;
+  else           newVersion = `${maj}.${min + 1}.0`;
+} else {
+  // patch: calcula o proximo patch primeiro
+  const nextPat = pat + 1;
+  if (nextPat >= 10) {
+    // patch saturado → sobe minor (ou major se minor tambem saturado)
+    const nextMin = min + 1;
+    if (nextMin >= 10) newVersion = `${maj + 1}.0.0`;
+    else               newVersion = `${maj}.${nextMin}.0`;
+  } else {
+    newVersion = `${maj}.${min}.${nextPat}`;
+  }
+}
 
 // --- Validacoes git ---
 
