@@ -24,7 +24,7 @@ win:
   icon: assets/icon.ico
 
 nsis:
-  oneClick: true
+  oneClick: false
   perMachine: true
   allowToChangeInstallationDirectory: false
   allowElevation: true
