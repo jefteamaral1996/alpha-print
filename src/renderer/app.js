@@ -39,6 +39,8 @@ const updateStatusText = document.getElementById("update-status-text");
 const updateProgressBarWrap = document.getElementById("update-progress-bar-wrap");
 const updateProgressBar = document.getElementById("update-progress-bar");
 
+const fullRestartBtn = document.getElementById("full-restart-btn");
+
 let printers = [];
 let deviceNameTimer = null;
 
@@ -83,6 +85,17 @@ async function init() {
   // Updater: receber status em tempo real
   api.onUpdaterStatus((payload) => {
     updateUpdaterStatus(payload);
+  });
+
+  // Full restart falhou — NAO volta pro login, mostra status de reconexao
+  // O main process vai continuar tentando em background automaticamente
+  api.onFullRestartFailed(() => {
+    // Show reconnecting status instead of login screen
+    updateConnectionStatus({
+      internet: "checking",
+      server: "reconnecting",
+      serverDetail: "Reconectando automaticamente...",
+    });
   });
 }
 
@@ -142,6 +155,50 @@ function updateConnectionStatus(status) {
       }
     }
   }
+}
+
+// ── Reconexao Completa (Full Restart — simula fechar e abrir o app) ──
+
+async function doFullRestart() {
+  if (!fullRestartBtn) return;
+  fullRestartBtn.disabled = true;
+  fullRestartBtn.textContent = "Reiniciando...";
+  fullRestartBtn.className = "btn-full-restart restarting";
+
+  try {
+    const result = await api.fullRestart();
+
+    if (result.success) {
+      fullRestartBtn.textContent = "Reconectado!";
+      fullRestartBtn.className = "btn-full-restart success";
+      // Recarrega info da tela (store name, printers, etc.)
+      const status = await api.getAuthStatus();
+      if (status.isLoggedIn) {
+        storeInfo.textContent = status.storeName
+          ? `${status.storeName} — ${status.email}`
+          : status.email;
+      }
+      await refreshPrinters();
+      await loadConnectionStatus();
+      await loadRecentJobs();
+    } else {
+      fullRestartBtn.textContent = "Reconectando em segundo plano...";
+      fullRestartBtn.className = "btn-full-restart error";
+      // NAO redireciona pra login — o main process continua tentando em background
+    }
+  } catch {
+    fullRestartBtn.textContent = "Erro na reconexao";
+    fullRestartBtn.className = "btn-full-restart error";
+  }
+
+  // Restaura o botao apos 3s
+  setTimeout(() => {
+    if (fullRestartBtn) {
+      fullRestartBtn.disabled = false;
+      fullRestartBtn.textContent = "Reiniciar conexao completa";
+      fullRestartBtn.className = "btn-full-restart";
+    }
+  }, 3000);
 }
 
 // ── Reconexao Manual (Mecanismo 4) ──
@@ -577,6 +634,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const checkUpdateBtnEl = document.getElementById("check-update-btn");
   if (checkUpdateBtnEl) checkUpdateBtnEl.addEventListener("click", doCheckUpdates);
+
+  const fullRestartBtnEl = document.getElementById("full-restart-btn");
+  if (fullRestartBtnEl) fullRestartBtnEl.addEventListener("click", doFullRestart);
 });
 
 // ── Start ──

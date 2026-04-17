@@ -55,6 +55,14 @@ let currentStoreId: string | null = null;
 // Timestamps to detect a dead connection via heartbeat
 let lastSuccessfulEventAt: number = Date.now();
 
+// Mecanismo 6: Full restart automático — callback chamado quando reconexão parcial
+// falha repetidamente, sinalizando ao main process para fazer full restart
+type FullRestartRequestCallback = () => void;
+let fullRestartRequestCallback: FullRestartRequestCallback | null = null;
+let consecutiveReconnectFailures = 0;
+const MAX_RECONNECT_FAILURES_BEFORE_FULL_RESTART = 5;
+let fullRestartInProgress = false;
+
 // Connection status tracking
 let currentInternetStatus: "online" | "offline" | "checking" = "checking";
 let currentServerStatus: "connected" | "disconnected" | "reconnecting" = "disconnected";
@@ -157,9 +165,22 @@ function startHeartbeat(): void {
 
     const silentMs = Date.now() - lastSuccessfulEventAt;
     if (silentMs > HEARTBEAT_DEAD_MS) {
-      console.warn(`[Heartbeat] Conexão silenciosa por ${Math.round(silentMs / 1000)}s — forçando reconexão`);
+      consecutiveReconnectFailures++;
+      console.warn(`[Heartbeat] Conexão silenciosa por ${Math.round(silentMs / 1000)}s — forçando reconexão (falha #${consecutiveReconnectFailures}/${MAX_RECONNECT_FAILURES_BEFORE_FULL_RESTART})`);
+
+      // Mecanismo 6: Se heartbeat detectou morte muitas vezes, full restart
+      if (consecutiveReconnectFailures >= MAX_RECONNECT_FAILURES_BEFORE_FULL_RESTART && !fullRestartInProgress) {
+        console.warn(`[Heartbeat] ${consecutiveReconnectFailures} falhas consecutivas — solicitando full restart automatico`);
+        fullRestartInProgress = true;
+        currentServerStatus = "reconnecting";
+        currentServerDetail = "Reconexao completa automatica...";
+        emitConnectionStatus();
+        fullRestartRequestCallback?.();
+        return;
+      }
+
       currentServerStatus = "reconnecting";
-      currentServerDetail = "Verificando conexão...";
+      currentServerDetail = `Verificando conexão... (${consecutiveReconnectFailures}/${MAX_RECONNECT_FAILURES_BEFORE_FULL_RESTART})`;
       emitConnectionStatus();
       if (reconnectTimer) {
         clearTimeout(reconnectTimer);
@@ -214,9 +235,22 @@ function setupChannels(storeId: string): void {
       console.log("[Presence] Tracking started with", cachedPrinters.length, "printers");
     } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
       console.error("[Presence] Channel error/timeout, scheduling reconnect");
+      consecutiveReconnectFailures++;
+      console.log(`[Reconnect] Falha consecutiva #${consecutiveReconnectFailures}/${MAX_RECONNECT_FAILURES_BEFORE_FULL_RESTART}`);
       currentServerStatus = "reconnecting";
-      currentServerDetail = "Tentando reconectar...";
+      currentServerDetail = `Tentando reconectar... (${consecutiveReconnectFailures}/${MAX_RECONNECT_FAILURES_BEFORE_FULL_RESTART})`;
       emitConnectionStatus();
+
+      // Mecanismo 6: Se falhou muitas vezes, pede full restart ao main process
+      if (consecutiveReconnectFailures >= MAX_RECONNECT_FAILURES_BEFORE_FULL_RESTART && !fullRestartInProgress) {
+        console.warn(`[Reconnect] ${consecutiveReconnectFailures} falhas consecutivas — solicitando full restart automatico`);
+        fullRestartInProgress = true;
+        currentServerDetail = "Reconexao completa automatica...";
+        emitConnectionStatus();
+        fullRestartRequestCallback?.();
+        return; // Não agenda reconexão parcial — full restart vai cuidar
+      }
+
       scheduleReconnect(storeId);
     }
   });
@@ -254,13 +288,27 @@ function setupChannels(storeId: string): void {
         currentServerDetail = "Recebendo pedidos";
         lastSuccessfulEventAt = Date.now(); // Mecanismo 3: marca heartbeat
         reconnectAttempts = 0;             // Reset backoff ao reconectar com sucesso
+        consecutiveReconnectFailures = 0;  // Mecanismo 6: reset falhas consecutivas
+        fullRestartInProgress = false;
         emitConnectionStatus();
         processPendingJobs();
       } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-        console.error("[PrintListener] Channel error/timeout, scheduling reconnect");
+        consecutiveReconnectFailures++;
+        console.error(`[PrintListener] Channel error/timeout (falha #${consecutiveReconnectFailures}/${MAX_RECONNECT_FAILURES_BEFORE_FULL_RESTART}), scheduling reconnect`);
         currentServerStatus = "reconnecting";
-        currentServerDetail = "Tentando reconectar...";
+        currentServerDetail = `Tentando reconectar... (${consecutiveReconnectFailures}/${MAX_RECONNECT_FAILURES_BEFORE_FULL_RESTART})`;
         emitConnectionStatus();
+
+        // Mecanismo 6: Se falhou muitas vezes, pede full restart ao main process
+        if (consecutiveReconnectFailures >= MAX_RECONNECT_FAILURES_BEFORE_FULL_RESTART && !fullRestartInProgress) {
+          console.warn(`[Reconnect] ${consecutiveReconnectFailures} falhas consecutivas — solicitando full restart automatico`);
+          fullRestartInProgress = true;
+          currentServerDetail = "Reconexao completa automatica...";
+          emitConnectionStatus();
+          fullRestartRequestCallback?.();
+          return; // Não agenda reconexão parcial — full restart vai cuidar
+        }
+
         scheduleReconnect(storeId);
       }
     });
@@ -422,6 +470,8 @@ export function stopListening(): void {
 
   callback = null;
   reconnectAttempts = 0;
+  consecutiveReconnectFailures = 0;
+  fullRestartInProgress = false;
   console.log("[PrintListener] Stopped");
 }
 
@@ -459,6 +509,22 @@ export function onPrintersChange(cb: PrintersChangeCallback): void {
 
 export function onConnectionStatusChange(cb: ConnectionStatusCallback): void {
   connectionStatusCallback = cb;
+}
+
+/**
+ * Mecanismo 6: Registra callback para quando reconexão parcial falhar repetidamente.
+ * O main process usa isso para disparar full restart automaticamente.
+ */
+export function onFullRestartNeeded(cb: FullRestartRequestCallback): void {
+  fullRestartRequestCallback = cb;
+}
+
+/**
+ * Mecanismo 6: Reseta o contador de falhas (chamado após full restart bem-sucedido).
+ */
+export function resetReconnectFailures(): void {
+  consecutiveReconnectFailures = 0;
+  fullRestartInProgress = false;
 }
 
 /**

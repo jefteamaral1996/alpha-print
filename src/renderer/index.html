@@ -12,7 +12,7 @@
     <!-- Login Screen -->
     <div id="login-screen" class="screen">
       <div class="logo">
-        <div class="logo-icon">AP</div>
+        <img src="logo-alpha.png" alt="Alpha Cardapio" class="logo-img" />
         <h1>Alpha Print</h1>
         <p class="subtitle">Impressao automatica para restaurantes</p>
       </div>
@@ -69,6 +69,11 @@
         <!-- Mecanismo 4: Botao manual de reconexao — aparece so quando desconectado -->
         <div id="reconnect-row" class="reconnect-row hidden">
           <button id="reconnect-btn" class="btn-reconnect">Reconectar agora</button>
+        </div>
+        <!-- Reconexao completa: simula fechar e abrir o app -->
+        <div class="full-restart-row">
+          <button id="full-restart-btn" class="btn-full-restart">Reiniciar conexao completa</button>
+          <span class="full-restart-hint">Simula fechar e abrir o app</span>
         </div>
         <div id="last-print" class="last-print hidden">
           <span class="label">Ultima impressao:</span>

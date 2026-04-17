@@ -8,7 +8,7 @@
 import { app, BrowserWindow, ipcMain } from "electron";
 import path from "path";
 import { existsSync } from "fs";
-import store, { isLoggedIn, clearAuth } from "./store";
+import store, { isLoggedIn, hasSavedCredentials } from "./store";
 import { login, restoreSession, logout, startTokenRefresh } from "./supabase";
 import { listPrinters, printTest, getDefaultPrinter } from "./printer";
 import {
@@ -22,6 +22,8 @@ import {
   onConnectionStatusChange,
   getConnectionStatus,
   forceReconnect,
+  onFullRestartNeeded,
+  resetReconnectFailures,
 } from "./print-listener";
 import { createTray, updateTrayStatus, updateLastPrintTime, destroyTray } from "./tray";
 import { initAutoUpdater } from "./updater";
@@ -72,11 +74,19 @@ app.on("ready", async () => {
   initAutoUpdater(() => mainWindow);
   createTray(showWindow, quitApp);
 
-  if (isLoggedIn()) {
+  if (isLoggedIn() || hasSavedCredentials()) {
+    // Try to restore session (includes retry + auto re-login with saved credentials)
     const restored = await restoreSession();
     if (restored) {
       startPrintService();
+    } else if (hasSavedCredentials()) {
+      // restoreSession already tried autoReLogin, but it may have failed due to
+      // network issues at startup. Start a background retry loop.
+      console.log("[App] Session restore failed at startup — starting background retry");
+      showWindow(); // Show window but keep credentials for retry
+      startBackgroundReloginRetry();
     } else {
+      // No credentials at all — need manual login
       showWindow();
     }
   } else {
@@ -91,6 +101,7 @@ app.on("window-all-closed", () => {
 app.on("before-quit", () => {
   isQuitting = true;
   stopPrintService();
+  stopBackgroundReloginRetry();
   destroyTray();
 });
 
@@ -212,7 +223,121 @@ function quitApp(): void {
 
 // ── Print Service ─────────────────────────────────────────
 
+// ── Automatic Full Restart (Mecanismo 6) ─────────────────
+// Quando reconexão parcial falha repetidamente, faz full restart automaticamente.
+// Usa debounce para evitar múltiplos full restarts simultâneos.
+let autoFullRestartInProgress = false;
+
+async function performAutoFullRestart(): Promise<void> {
+  if (autoFullRestartInProgress) {
+    console.log("[AutoFullRestart] Ja em andamento — ignorando duplicata");
+    return;
+  }
+
+  autoFullRestartInProgress = true;
+  console.log("[AutoFullRestart] Reconexao parcial falhou repetidamente — iniciando full restart automatico...");
+
+  try {
+    // 1. Para todo o servico de impressao
+    stopPrintService();
+
+    // 2. Re-autentica do zero (includes retry + auto re-login)
+    const restored = await restoreSession();
+    if (!restored) {
+      console.warn("[AutoFullRestart] Sessao nao restaurada agora — iniciando retry em background");
+      // NEVER send fullRestart:failed — instead start background retry
+      startBackgroundReloginRetry();
+      autoFullRestartInProgress = false;
+      return;
+    }
+
+    // 3. Reinicia o servico de impressao
+    startPrintService();
+
+    // 4. Reseta contadores de falha
+    resetReconnectFailures();
+
+    console.log("[AutoFullRestart] Full restart automatico concluido com sucesso");
+  } catch (err) {
+    console.error("[AutoFullRestart] Erro durante full restart automatico:", err);
+    // NEVER send fullRestart:failed — start background retry instead
+    startBackgroundReloginRetry();
+  } finally {
+    autoFullRestartInProgress = false;
+  }
+}
+
+// ── Background Re-login Retry ─────────────────────────────
+// When session restoration fails (e.g., no network at boot, token fully expired),
+// this retries in the background with increasing intervals until it succeeds.
+// The app NEVER goes to the login screen — it keeps trying silently.
+
+let backgroundReloginTimer: NodeJS.Timeout | null = null;
+let backgroundReloginAttempt = 0;
+
+function startBackgroundReloginRetry(): void {
+  if (backgroundReloginTimer) {
+    console.log("[BackgroundRelogin] Already running — skipping duplicate");
+    return;
+  }
+
+  if (!hasSavedCredentials()) {
+    console.log("[BackgroundRelogin] No saved credentials — cannot retry");
+    return;
+  }
+
+  backgroundReloginAttempt = 0;
+
+  const tryRelogin = async () => {
+    backgroundReloginAttempt++;
+    // Backoff: 5s, 10s, 20s, 30s, 30s, 30s... (cap at 30s)
+    const delay = Math.min(5000 * Math.pow(2, backgroundReloginAttempt - 1), 30000);
+
+    console.log(`[BackgroundRelogin] Attempt ${backgroundReloginAttempt} — trying auto re-login...`);
+
+    // Notify renderer that we're reconnecting (not failed)
+    mainWindow?.webContents.send("connection:status", {
+      internet: "checking",
+      server: "reconnecting",
+      serverDetail: `Reconectando automaticamente... (tentativa ${backgroundReloginAttempt})`,
+    });
+
+    const success = await restoreSession();
+
+    if (success) {
+      console.log(`[BackgroundRelogin] Success on attempt ${backgroundReloginAttempt}!`);
+      backgroundReloginTimer = null;
+      backgroundReloginAttempt = 0;
+      startPrintService();
+
+      // Notify renderer of success
+      mainWindow?.webContents.send("connection:status", {
+        internet: "online",
+        server: "connected",
+        serverDetail: "Reconectado automaticamente",
+      });
+      return;
+    }
+
+    console.log(`[BackgroundRelogin] Attempt ${backgroundReloginAttempt} failed — next try in ${delay / 1000}s`);
+    backgroundReloginTimer = setTimeout(tryRelogin, delay);
+  };
+
+  // Start first attempt after 5 seconds
+  backgroundReloginTimer = setTimeout(tryRelogin, 5000);
+}
+
+function stopBackgroundReloginRetry(): void {
+  if (backgroundReloginTimer) {
+    clearTimeout(backgroundReloginTimer);
+    backgroundReloginTimer = null;
+  }
+  backgroundReloginAttempt = 0;
+}
+
 function startPrintService(): void {
+  // Stop any background relogin since we're now connected
+  stopBackgroundReloginRetry();
   tokenRefreshInterval = startTokenRefresh();
 
   // Register callbacks for UI updates
@@ -226,6 +351,12 @@ function startPrintService(): void {
 
   onConnectionStatusChange((status) => {
     mainWindow?.webContents.send("connection:status", status);
+  });
+
+  // Mecanismo 6: Full restart automático quando reconexão parcial falha repetidamente
+  onFullRestartNeeded(() => {
+    console.log("[App] print-listener solicitou full restart automático");
+    performAutoFullRestart();
   });
 
   startListening((event) => {
@@ -359,5 +490,28 @@ ipcMain.handle("app:info", () => {
 // Mecanismo 4: Botão manual "Reconectar agora" da UI
 ipcMain.handle("connection:reconnect", () => {
   forceReconnect();
+  return { success: true };
+});
+
+// Reconexao completa: simula fechar e abrir o app (destroi tudo e refaz do zero)
+ipcMain.handle("connection:fullRestart", async () => {
+  console.log("[App] Full restart requested — tearing down everything and reconnecting...");
+
+  // 1. Para todo o servico de impressao (canais Realtime, timers, presence)
+  stopPrintService();
+
+  // 2. Re-autentica do zero (includes retry + auto re-login with saved credentials)
+  const restored = await restoreSession();
+  if (!restored) {
+    console.warn("[App] Full restart — session not restored immediately, starting background retry");
+    // NEVER redirect to login — start background retry instead
+    startBackgroundReloginRetry();
+    return { success: false, error: "Reconectando em segundo plano..." };
+  }
+
+  // 3. Reinicia o servico de impressao (novos canais, nova presence, novo heartbeat)
+  startPrintService();
+
+  console.log("[App] Full restart completed successfully");
   return { success: true };
 });

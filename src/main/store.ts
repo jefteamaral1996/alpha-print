@@ -23,6 +23,10 @@ interface StoreSchema {
   accessToken: string;
   refreshToken: string;
 
+  // Saved credentials for automatic re-login when session dies completely
+  // Encrypted by electron-store's encryptionKey
+  savedPassword: string;
+
   // User/store info (from profile after login)
   storeId: string;
   userEmail: string;
@@ -47,6 +51,7 @@ const store = new Store<StoreSchema>({
   defaults: {
     accessToken: "",
     refreshToken: "",
+    savedPassword: "",
     storeId: "",
     userEmail: "",
     storeName: "",
@@ -71,13 +76,34 @@ export function isLoggedIn(): boolean {
   return !!store.get("accessToken") && !!store.get("storeId");
 }
 
+/**
+ * Full auth clear — used ONLY on manual logout.
+ * Clears everything including saved credentials.
+ */
 export function clearAuth(): void {
   store.set("accessToken", "");
   store.set("refreshToken", "");
+  store.set("savedPassword", "");
   store.set("storeId", "");
   store.set("userEmail", "");
   store.set("storeName", "");
   store.set("areaMappings", {});
+}
+
+/**
+ * Clear only tokens — preserves email, password, storeId, storeName, mappings.
+ * Used when session expires but we want to auto re-login.
+ */
+export function clearTokensOnly(): void {
+  store.set("accessToken", "");
+  store.set("refreshToken", "");
+}
+
+/**
+ * Check if we have saved credentials for automatic re-login.
+ */
+export function hasSavedCredentials(): boolean {
+  return !!store.get("userEmail") && !!store.get("savedPassword");
 }
 
 export function getDeviceId(): string {

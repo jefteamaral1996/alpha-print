@@ -31,6 +31,14 @@ contextBridge.exposeInMainWorld("alphaPrint", {
   // Mecanismo 4: Reconexão manual via botão na UI
   reconnectNow: () => ipcRenderer.invoke("connection:reconnect"),
 
+  // Reconexão completa: simula fechar e abrir o app (destrói sessão e refaz tudo)
+  fullRestart: () => ipcRenderer.invoke("connection:fullRestart"),
+
+  // Evento: full restart falhou (sessão expirada — precisa login)
+  onFullRestartFailed: (callback: () => void) => {
+    ipcRenderer.on("connection:fullRestart:failed", () => callback());
+  },
+
   // Recent print jobs (last 3)
   getRecentJobs: () => ipcRenderer.invoke("jobs:recent"),
 

@@ -1,10 +1,24 @@
 ; Alpha Print - Customizacao do Instalador NSIS
-; Personaliza textos e paginas do instalador/desinstalador
+; Personaliza textos, logs e progresso do instalador/desinstalador
+;
+; PROBLEMA RESOLVIDO:
+; O electron-builder (installSection.nsh) executa "SetDetailsPrint none"
+; antes de copiar arquivos, silenciando a caixa de logs.
+; A solucao usa dois mecanismos:
+; 1. customHeader: ShowInstDetails show / ShowUnInstDetails show
+;    (sobrescreve o "nevershow" do common.nsh — ultima diretiva vence)
+; 2. customPageAfterChangeDir: define callback SHOW na pagina INSTFILES
+;    que exibe mensagens de progresso antes da secao rodar
+; 3. customInstall: re-habilita SetDetailsPrint both e mostra logs apos copia
+;
+; Para porcentagem: NSIS mostra barra de progresso nativa na pagina INSTFILES.
+; Adicionamos DetailPrint com porcentagem manual nas etapas pos-copia.
 
 ; =============================================================
 ; HEADER — Sobrescreve configuracoes globais do NSIS
 ; O common.nsh do electron-builder define "ShowInstDetails nevershow"
-; Aqui redefinimos para "show" — a ultima diretiva vence no NSIS
+; e "ShowUninstDetails nevershow" (quando BUILD_UNINSTALLER).
+; Aqui redefinimos para "show" — a ultima diretiva vence no NSIS.
 ; =============================================================
 !macro customHeader
   ShowInstDetails show
@@ -15,39 +29,65 @@
 ; INSTALADOR — Paginas e acoes
 ; =============================================================
 
-; --- Re-habilita logs na caixa de detalhes antes da copia de arquivos ---
-; PROBLEMA: o installSection.nsh do electron-builder executa
-;   SetDetailsPrint none
-; antes de copiar os arquivos, silenciando toda a caixa de logs.
-; SOLUCAO: usar o hook MUI_PAGE_CUSTOMFUNCTION_SHOW da pagina INSTFILES
-; para chamar SetDetailsPrint both logo antes da instalacao comecar.
-; Este macro e inserido em assistedInstaller.nsh ANTES do MUI_PAGE_INSTFILES.
+; --- Callback SHOW da pagina INSTFILES ---
+; Este hook roda quando a pagina INSTFILES e exibida (antes da secao executar).
+; Re-habilita logs e mostra mensagem inicial de progresso.
+; NOTA: o installSection.nsh vai chamar SetDetailsPrint none logo apos,
+; silenciando os logs de extracao individual de arquivo (por design do
+; electron-builder). Os logs voltam a funcionar no customInstall.
 !macro customPageAfterChangeDir
-  !define MUI_PAGE_CUSTOMFUNCTION_SHOW EnableInstDetailsLog
-  Function EnableInstDetailsLog
+  !define MUI_PAGE_CUSTOMFUNCTION_SHOW InstFilesPageShow
+
+  Function InstFilesPageShow
+    ; Re-habilita impressao de detalhes
     SetDetailsPrint both
+
+    ; Mensagem inicial visivel ao usuario enquanto a barra de progresso avanca
+    DetailPrint ""
+    DetailPrint "====================================="
+    DetailPrint "  Alpha Print - Instalando..."
+    DetailPrint "====================================="
+    DetailPrint ""
+    DetailPrint "Preparando arquivos do aplicativo..."
+    DetailPrint "A barra de progresso acima mostra o andamento."
+    DetailPrint "Aguarde enquanto os arquivos sao copiados..."
+    DetailPrint ""
   FunctionEnd
 !macroend
 
 ; --- Matar processo do Alpha Print antes de instalar/atualizar ---
 ; Resolve o erro "Nao e possivel fechar o Alpha Print" do NSIS
 !macro customInstall
-  ; Garante que os DetailPrint abaixo sejam visiveis
-  ; (o installSection.nsh chama SetDetailsPrint none antes da copia,
-  ;  mas o hook SHOW acima ja re-habilita. Mantemos aqui como seguranca.)
+  ; Re-habilita logs (o installSection.nsh chamou SetDetailsPrint none antes)
   SetDetailsPrint both
 
   ; Mata o processo caso esteja rodando
+  DetailPrint "Verificando se o Alpha Print esta em execucao..."
   nsExec::ExecToLog "taskkill /f /im $\"Alpha Print.exe$\""
+  Pop $0
+  ${If} $0 == 0
+    DetailPrint "Alpha Print foi fechado automaticamente."
+    Sleep 500
+  ${Else}
+    DetailPrint "Alpha Print nao estava em execucao. OK."
+  ${EndIf}
 
-  ; Mostra no log o que esta acontecendo
+  ; Progresso: arquivos copiados
   DetailPrint ""
+  DetailPrint "[100%] Copia de arquivos concluida."
+  DetailPrint ""
+
+  ; Progresso: atalhos
+  DetailPrint "[100%] Atalhos criados na area de trabalho e no Menu Iniciar."
+  DetailPrint ""
+
+  ; Resumo final
   DetailPrint "====================================="
-  DetailPrint "  Alpha Print - Instalacao concluida"
+  DetailPrint "  Instalacao concluida com sucesso!"
   DetailPrint "====================================="
   DetailPrint ""
-  DetailPrint "Todos os arquivos foram copiados."
-  DetailPrint "Atalhos criados na area de trabalho e no menu Iniciar."
+  DetailPrint "O Alpha Print esta pronto para uso."
+  DetailPrint "Voce pode abri-lo pela area de trabalho ou Menu Iniciar."
 !macroend
 
 ; --- Pagina de boas-vindas customizada ---
@@ -58,9 +98,6 @@
 !macroend
 
 ; --- Textos da tela de conclusao (instalador) ---
-; Estes defines ficam no escopo global, mas so sao usados pelo MUI_PAGE_FINISH
-; que roda dentro do bloco !ifndef BUILD_UNINSTALLER do assistedInstaller.nsh
-; O desinstalador redefine seus proprios textos via customUninstallPage
 !ifndef BUILD_UNINSTALLER
   !define MUI_FINISHPAGE_TITLE "Instalacao concluida!"
   !define MUI_FINISHPAGE_TEXT "O Alpha Print foi instalado com sucesso no seu computador.$\r$\n$\r$\nClique em Concluir para fechar o instalador."
@@ -80,44 +117,66 @@
 
 ; --- Acoes extras durante a desinstalacao ---
 !macro customUnInstall
+  ; Garante que os DetailPrint sejam visiveis
+  SetDetailsPrint both
+
   ; Mata o processo caso esteja rodando
-  nsExec::ExecToLog "taskkill /f /im $\"Alpha Print.exe$\""
-
-  ; Aguarda o processo fechar completamente
-  Sleep 1000
-
-  ; =============================================================
-  ; LIMPEZA COMPLETA — Remove TODOS os dados do Alpha Print
-  ; =============================================================
   DetailPrint ""
   DetailPrint "====================================="
   DetailPrint "  Alpha Print - Desinstalacao"
   DetailPrint "====================================="
   DetailPrint ""
-  DetailPrint "Removendo arquivos e dados do Alpha Print..."
+
+  DetailPrint "[  0%] Verificando processos em execucao..."
+  nsExec::ExecToLog "taskkill /f /im $\"Alpha Print.exe$\""
+  Pop $0
+  ${If} $0 == 0
+    DetailPrint "        Alpha Print foi fechado automaticamente."
+  ${Else}
+    DetailPrint "        Alpha Print nao estava em execucao. OK."
+  ${EndIf}
+
+  ; Aguarda o processo fechar completamente
+  Sleep 1000
+  DetailPrint "[ 10%] Processo encerrado."
+  DetailPrint ""
+
+  ; =============================================================
+  ; LIMPEZA COMPLETA — Remove TODOS os dados do Alpha Print
+  ; =============================================================
 
   ; 1. AppData\Roaming\Alpha Print (electron-store: storeId, deviceId, configuracoes)
-  DetailPrint "Removendo dados de configuracao (AppData\Roaming)..."
+  DetailPrint "[ 20%] Removendo dados de configuracao (AppData\Roaming)..."
   RMDir /r "$APPDATA\Alpha Print"
+  DetailPrint "        Configuracoes removidas."
 
   ; 2. AppData\Local\alpha-print (cache Electron: GPU cache, logs, Code Cache)
-  DetailPrint "Removendo cache do aplicativo (AppData\Local)..."
+  DetailPrint "[ 40%] Removendo cache do aplicativo (AppData\Local)..."
   RMDir /r "$LOCALAPPDATA\alpha-print"
+  DetailPrint "        Cache removido."
 
   ; 3. Arquivos temporarios de impressao (*.bin e *.ps1 criados pelo printer.ts)
-  DetailPrint "Removendo arquivos temporarios de impressao..."
+  DetailPrint "[ 60%] Removendo arquivos temporarios de impressao..."
   Delete "$TEMP\alpha-print-*.bin"
   Delete "$TEMP\alpha-print-*.ps1"
+  DetailPrint "        Temporarios removidos."
 
   ; 4. Entradas de registro criadas pelo electron-store e pelo Electron
-  DetailPrint "Removendo entradas do registro do Windows..."
+  DetailPrint "[ 80%] Removendo entradas do registro do Windows..."
   DeleteRegKey HKCU "Software\Alpha Print"
   DeleteRegKey HKCU "Software\alpha-print"
   ; Remove entrada de auto-start caso o app tenha criado
   DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Alpha Print"
+  DetailPrint "        Registro limpo."
 
   DetailPrint ""
-  DetailPrint "Limpeza concluida. Nenhum dado do Alpha Print permanece no computador."
+  DetailPrint "[100%] Limpeza completa concluida."
+  DetailPrint ""
+  DetailPrint "====================================="
+  DetailPrint "  Desinstalacao concluida!"
+  DetailPrint "====================================="
+  DetailPrint ""
+  DetailPrint "Nenhum dado do Alpha Print permanece no computador."
 !macroend
 
 ; --- Pagina final do desinstalador (apos MUI_UNPAGE_INSTFILES) ---
