@@ -40,6 +40,7 @@ export const CHANNEL_LABELS: Record<string, string> = {
   whatsapp: "WhatsApp",
   portal: "Portal",
   ifood: "iFood",
+  IFOOD: "iFood",
 };
 
 export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
