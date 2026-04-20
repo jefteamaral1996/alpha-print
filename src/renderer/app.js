@@ -226,9 +226,27 @@ async function doReconnect() {
 // ── Login ──
 
 function showLoginScreen() {
-  loginScreen.classList.remove("hidden");
+  // Ensure main screen is fully hidden first
   mainScreen.classList.add("hidden");
-  emailInput.focus();
+
+  // Show login screen
+  loginScreen.classList.remove("hidden");
+
+  // Reset form state to ensure inputs are interactive
+  loginError.classList.add("hidden");
+  loginBtn.disabled = false;
+  loginText.classList.remove("hidden");
+  loginLoading.classList.add("hidden");
+
+  // Clear any lingering inline styles that might block interaction
+  emailInput.removeAttribute("disabled");
+  passwordInput.removeAttribute("disabled");
+
+  // Small delay to ensure DOM is settled before focusing
+  // (Electron/Chromium can lose focus during display:none transitions)
+  setTimeout(() => {
+    emailInput.focus();
+  }, 50);
 }
 
 loginForm.addEventListener("submit", async (e) => {
@@ -603,8 +621,15 @@ async function doLogout() {
   }
 
   await api.logout();
-  showLoginScreen();
+
+  // Clear form fields before showing login screen
+  emailInput.value = "";
   passwordInput.value = "";
+
+  // Dismiss any active toasts
+  dismissFailureAlert();
+
+  showLoginScreen();
 }
 
 // ── Helpers ──

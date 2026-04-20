@@ -25,6 +25,7 @@ export interface PortalArea {
   copies: number;
   paper_width: number;
   print_receipt_types: string[];
+  modality_printer_overrides?: Record<string, string | null>;
 }
 
 type AreasChangeCallback = (areas: PortalArea[]) => void;
@@ -73,6 +74,10 @@ let cachedPrinters: string[] = [];
 // Track processed job IDs to prevent double-printing
 const processedJobs = new Set<string>();
 const PROCESSED_JOBS_MAX = 500;
+
+// Retry configuration
+const MAX_RETRIES = 3;
+const RETRY_DELAYS_MS = [3000, 8000, 15000]; // 3s, 8s, 15s between retries
 
 function cleanupProcessedJobs(): void {
   if (processedJobs.size > PROCESSED_JOBS_MAX) {
@@ -275,6 +280,7 @@ function setupChannels(storeId: string): void {
           print_area_id: string | null;
           raw_data: string;
           copies: number;
+          retry_count: number;
         };
         if (job.status === "pending" && !processedJobs.has(job.id)) {
           processJob(job);
@@ -615,6 +621,13 @@ export function getCachedPrinters(): string[] {
   return [...cachedPrinters];
 }
 
+/**
+ * Get cached area-to-printer mappings for this device.
+ */
+export function getAreaMappings(): Record<string, any> {
+  return store.get("areaMappings");
+}
+
 // ── Sync printers to DB ──────────────────────────────────
 
 /**
@@ -699,7 +712,7 @@ async function loadAreasFromPortal(): Promise<void> {
   try {
     const { data, error } = await supabase
       .from("print_areas")
-      .select("id, name, area_type, enabled, copies, paper_width, print_receipt_types")
+      .select("id, name, area_type, enabled, copies, paper_width, print_receipt_types, modality_printer_overrides")
       .eq("store_id", storeId)
       .order("created_at", { ascending: true });
 
@@ -835,7 +848,7 @@ async function processPendingJobs(): Promise<void> {
   try {
     const { data: jobs, error } = await supabase
       .from("print_jobs")
-      .select("id, printer_name, print_area_id, raw_data, copies, status")
+      .select("id, printer_name, print_area_id, raw_data, copies, status, retry_count")
       .eq("store_id", storeId)
       .eq("status", "pending")
       .order("created_at", { ascending: true })
@@ -937,6 +950,8 @@ function resolveJobPrinter(job: {
 
 /**
  * Process a single print job: resolve printer, print, update status.
+ * Includes automatic retry logic: on failure, retries up to MAX_RETRIES times
+ * with increasing delays before marking as permanently failed.
  */
 async function processJob(job: {
   id: string;
@@ -944,6 +959,7 @@ async function processJob(job: {
   print_area_id?: string | null;
   raw_data: string;
   copies: number;
+  retry_count?: number;
 }): Promise<void> {
   if (processedJobs.has(job.id)) return;
   processedJobs.add(job.id);
@@ -951,6 +967,7 @@ async function processJob(job: {
 
   const supabase = getSupabase();
   const deviceId = getDeviceId();
+  const currentRetry = job.retry_count || 0;
 
   // Resolve which printer to use
   const printerName = resolveJobPrinter(job);
@@ -968,7 +985,7 @@ async function processJob(job: {
   }
 
   if (!printerName) {
-    // No printer configured at all
+    // No printer configured at all — no point retrying
     await supabase
       .from("print_jobs")
       .update({
@@ -1021,26 +1038,70 @@ async function processJob(job: {
     });
 
     reconnectAttempts = 0;
-    console.log(`[PrintListener] Job ${job.id} printed on ${printerName}`);
+    console.log(`[PrintListener] Job ${job.id} printed on ${printerName}${currentRetry > 0 ? ` (retry ${currentRetry})` : ""}`);
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : "Erro desconhecido";
 
-    await supabase
-      .from("print_jobs")
-      .update({
-        status: "failed",
-        error: errorMsg,
-        device_id: deviceId,
-      } as any)
-      .eq("id", job.id);
+    if (currentRetry < MAX_RETRIES) {
+      // Schedule retry: set status back to pending with incremented retry_count
+      const nextRetry = currentRetry + 1;
+      const delayMs = RETRY_DELAYS_MS[currentRetry] || RETRY_DELAYS_MS[RETRY_DELAYS_MS.length - 1];
 
-    callback?.({
-      type: "failed",
-      jobId: job.id,
-      printerName,
-      error: errorMsg,
-    });
+      console.warn(
+        `[PrintListener] Job ${job.id} failed (attempt ${nextRetry}/${MAX_RETRIES}): ${errorMsg}. Retrying in ${delayMs / 1000}s...`
+      );
 
-    console.error(`[PrintListener] Job ${job.id} failed:`, errorMsg);
+      await supabase
+        .from("print_jobs")
+        .update({
+          status: "retrying",
+          error: `Tentativa ${nextRetry}/${MAX_RETRIES}: ${errorMsg}`,
+          retry_count: nextRetry,
+          device_id: deviceId,
+        } as any)
+        .eq("id", job.id);
+
+      // Allow re-processing of this job
+      processedJobs.delete(job.id);
+
+      // Schedule the retry after delay
+      setTimeout(async () => {
+        // Set back to pending so the job gets picked up again
+        await supabase
+          .from("print_jobs")
+          .update({
+            status: "pending",
+          } as any)
+          .eq("id", job.id);
+
+        // Process it directly (don't wait for polling/realtime)
+        processJob({
+          ...job,
+          retry_count: nextRetry,
+        });
+      }, delayMs);
+    } else {
+      // All retries exhausted — mark as permanently failed
+      console.error(
+        `[PrintListener] Job ${job.id} PERMANENTLY FAILED after ${MAX_RETRIES} retries: ${errorMsg}`
+      );
+
+      await supabase
+        .from("print_jobs")
+        .update({
+          status: "failed",
+          error: `Falhou apos ${MAX_RETRIES} tentativas. Ultimo erro: ${errorMsg}`,
+          retry_count: currentRetry,
+          device_id: deviceId,
+        } as any)
+        .eq("id", job.id);
+
+      callback?.({
+        type: "failed",
+        jobId: job.id,
+        printerName,
+        error: `Falhou apos ${MAX_RETRIES} tentativas: ${errorMsg}`,
+      });
+    }
   }
 }

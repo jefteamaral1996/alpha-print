@@ -44,6 +44,8 @@ body {
   justify-content: center;
   align-items: center;
   gap: 24px;
+  position: relative;
+  z-index: 1;
 }
 
 .logo {
@@ -78,6 +80,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  user-select: auto;
+  -webkit-user-select: auto;
 }
 
 .field {
@@ -101,6 +105,10 @@ body {
   outline: none;
   transition: border-color 0.15s;
   background: white;
+  user-select: text;
+  -webkit-user-select: text;
+  pointer-events: auto;
+  cursor: text;
 }
 
 .field input:focus {
@@ -461,12 +469,6 @@ body {
   background: #fef2f2;
   border-color: #fca5a5;
   color: #dc2626;
-}
-
-.full-restart-hint {
-  font-size: 10px;
-  color: #9ca3af;
-  text-align: center;
 }
 
 .last-print {

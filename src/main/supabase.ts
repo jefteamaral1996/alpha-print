@@ -52,10 +52,10 @@ export async function login(
   store.set("userEmail", email);
   store.set("savedPassword", password);
 
-  // Fetch store_id from profile
+  // Fetch store_id from profile (company_profile has the full business name)
   const { data: profile, error: profileError } = await client
     .from("profiles")
-    .select("store_id, stores(name)")
+    .select("store_id, stores(name, company_profile(name))")
     .eq("id", data.user.id)
     .single();
 
@@ -68,7 +68,13 @@ export async function login(
   }
 
   store.set("storeId", profile.store_id);
-  store.set("storeName", (profile as any).stores?.name || "");
+  // Prefer full business name from company_profile (e.g. "Famintos Pizzaria Artesanal")
+  // company_profile is 1:1 with stores (unique store_id), so Supabase returns it as object
+  const storesData = (profile as any).stores;
+  const cp = storesData?.company_profile;
+  const companyName = Array.isArray(cp) ? cp[0]?.name : cp?.name;
+  const displayName = companyName || storesData?.name || "";
+  store.set("storeName", displayName);
 
   return { success: true, storeId: profile.store_id };
 }
@@ -78,6 +84,31 @@ export async function login(
  */
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Refresh the store display name from company_profile.
+ * Called after session restore / auto re-login so the UI always
+ * shows the full business name (e.g. "Famintos Pizzaria Artesanal").
+ */
+async function refreshStoreName(): Promise<void> {
+  const storeId = store.get("storeId");
+  if (!storeId) return;
+
+  try {
+    const client = getSupabase();
+    const { data } = await client
+      .from("company_profile")
+      .select("name")
+      .eq("store_id", storeId)
+      .single();
+
+    if (data?.name) {
+      store.set("storeName", data.name);
+    }
+  } catch {
+    // Non-critical — keep whatever name is already stored
+  }
 }
 
 /**
@@ -109,6 +140,8 @@ export async function restoreSession(): Promise<boolean> {
     // Success — update tokens
     store.set("accessToken", data.session.access_token);
     store.set("refreshToken", data.session.refresh_token);
+    // Refresh store display name in background (non-blocking)
+    refreshStoreName().catch(() => {});
     return true;
   }
 
@@ -200,6 +233,8 @@ export async function autoReLogin(): Promise<boolean> {
       if (!error && data.session) {
         store.set("accessToken", data.session.access_token);
         store.set("refreshToken", data.session.refresh_token);
+        // Refresh store display name in background (non-blocking)
+        refreshStoreName().catch(() => {});
         console.log(`[Auth] Auto re-login succeeded on attempt ${attempt + 1}`);
         return true;
       }

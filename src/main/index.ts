@@ -25,6 +25,8 @@ import {
   onFullRestartNeeded,
   resetReconnectFailures,
 } from "./print-listener";
+import { startOrderListener, stopOrderListener } from "./order-listener";
+import { refreshStoreData, startStoreDataRefresh, stopStoreDataRefresh } from "./store-data";
 import { createTray, updateTrayStatus, updateLastPrintTime, destroyTray } from "./tray";
 import { initAutoUpdater } from "./updater";
 
@@ -335,7 +337,7 @@ function stopBackgroundReloginRetry(): void {
   backgroundReloginAttempt = 0;
 }
 
-function startPrintService(): void {
+async function startPrintService(): Promise<void> {
   // Stop any background relogin since we're now connected
   stopBackgroundReloginRetry();
   tokenRefreshInterval = startTokenRefresh();
@@ -353,9 +355,9 @@ function startPrintService(): void {
     mainWindow?.webContents.send("connection:status", status);
   });
 
-  // Mecanismo 6: Full restart automático quando reconexão parcial falha repetidamente
+  // Mecanismo 6: Full restart automatico quando reconexao parcial falha repetidamente
   onFullRestartNeeded(() => {
-    console.log("[App] print-listener solicitou full restart automático");
+    console.log("[App] print-listener solicitou full restart automatico");
     performAutoFullRestart();
   });
 
@@ -392,11 +394,55 @@ function startPrintService(): void {
     mainWindow?.webContents.send("print:event", event);
   });
 
+  // -- Autonomous Order Printing --
+  // Fetch store settings + company profile (needed by receipt templates)
+  await refreshStoreData();
+  startStoreDataRefresh();
+
+  // Start listening for orders directly (Alpha Print prints autonomously)
+  startOrderListener((event) => {
+    // Track recent order prints same as job prints
+    if (event.type === "printed" || event.type === "failed") {
+      const job: RecentJob = {
+        id: event.orderId,
+        printerName: event.printerName,
+        status: event.type,
+        error: event.error,
+        timestamp: new Date().toISOString(),
+      };
+      recentJobs.unshift(job);
+      if (recentJobs.length > MAX_RECENT_JOBS) recentJobs.pop();
+      mainWindow?.webContents.send("jobs:recent-updated", recentJobs);
+    }
+
+    if (event.type === "printed") {
+      const now = new Date().toLocaleTimeString("pt-BR");
+      updateLastPrintTime(now);
+      updateTrayStatus("connected", showWindow, quitApp);
+      console.log(
+        `[OrderPrint] Order #${event.orderNumber} printed on ${event.printerName} (${event.areaType})`
+      );
+    } else if (event.type === "failed") {
+      mainWindow?.webContents.send("print:failure", {
+        jobId: event.orderId,
+        printerName: event.printerName,
+        error: event.error,
+      });
+      console.error(
+        `[OrderPrint] Order #${event.orderNumber} failed on ${event.printerName}: ${event.error}`
+      );
+    }
+
+    mainWindow?.webContents.send("order-print:event", event);
+  });
+
   updateTrayStatus("connected", showWindow, quitApp);
-  console.log("[App] Print service started");
+  console.log("[App] Print service started (with autonomous order printing)");
 }
 
 function stopPrintService(): void {
+  stopOrderListener();
+  stopStoreDataRefresh();
   stopListening();
   if (tokenRefreshInterval) {
     clearInterval(tokenRefreshInterval);
