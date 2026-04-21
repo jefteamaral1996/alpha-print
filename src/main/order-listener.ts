@@ -193,12 +193,14 @@ async function handleNewOrder(orderId: string): Promise<void> {
       return;
     }
 
-    // Deduplication: Wait briefly to allow the browser to create its print_jobs first.
+    // Deduplication: Wait to allow the browser to create its print_jobs first.
     // Both browser and Alpha Print receive the Realtime INSERT event nearly simultaneously.
-    // The browser creates jobs via alpha-print-service (source='browser'), which then
-    // get picked up by print-listener.ts. Without this delay, the order-listener might
-    // check before the browser has created its jobs, leading to duplicate prints.
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    // The browser now uses a 500ms debounce before creating jobs (BUGFIX 2026-04-21),
+    // plus async operations (fetch order, build receipt, insert jobs) take ~500ms more.
+    // Total browser time: ~1000ms. We wait 3000ms to be safe.
+    // Without this delay, the order-listener might check before the browser has created
+    // its jobs, leading to duplicate prints.
+    await new Promise((resolve) => setTimeout(resolve, 3000));
 
     // Check if the browser already created print_jobs for this order.
     // If those jobs exist (any status except failed), Alpha Print should NOT
